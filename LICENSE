@@ -1,0 +1,161 @@
+CythroDash End User License Agreement (EULA)
+Version 1.0
+
+Copyright © 2025 Cythro Development Team. All rights reserved.
+
+IMPORTANT: READ CAREFULLY BEFORE USING THIS SOFTWARE
+
+This End User License Agreement ("Agreement") is a legal contract between you (either an individual or entity) and Cythro Development Team regarding your use of CythroDash software and associated documentation ("Software"). By installing, accessing, or using the Software, you agree to be bound by this Agreement.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SECTION A: SOFTWARE LICENSE AND PERMITTED USES
+
+A.1 License Grant
+Subject to your compliance with this Agreement, Cythro grants you a personal, non-transferable, non-exclusive license to use the Software for legitimate purposes only.
+
+A.2 Authorized Use Scope
+- Personal and business use within the terms of this Agreement
+- Customization for internal use only
+- Integration with authorized third-party services
+- Development of compatible extensions (subject to restrictions below)
+
+A.3 Account Authentication
+The Software requires valid authentication through official Cythro services. This requirement cannot be circumvented, modified, or removed.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SECTION B: RESTRICTIONS AND PROHIBITED CONDUCT
+
+B.1 Distribution Restrictions
+You may NOT:
+- Redistribute, share, or transfer the Software to third parties
+- Create public repositories containing the Software
+- Sell, lease, or sublicense the Software
+- Make the Software available through hosting services without authorization
+
+B.2 Modification Limitations
+- Source code modifications are permitted for personal use only
+- Modified versions cannot be distributed or shared
+- Core authentication and licensing mechanisms must remain intact
+- Reverse engineering for competitive purposes is prohibited
+
+B.3 Commercial Use Policy
+Commercial deployment requires separate licensing arrangements. Contact Cythro for commercial licensing options.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SECTION C: INTELLECTUAL PROPERTY AND ATTRIBUTION
+
+C.1 Ownership
+Cythro retains all rights, title, and interest in the Software. This Agreement grants usage rights only, not ownership.
+
+C.2 Copyright Preservation
+All copyright notices, trademarks, and attribution statements must remain intact in any use or modification of the Software.
+
+C.3 Third-Party Components
+The Software may include third-party components subject to separate license terms, which are incorporated by reference.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SECTION D: WARRANTY DISCLAIMER AND LIABILITY LIMITATION
+
+D.1 No Warranty
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND. CYTHRO DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR PURPOSE, AND NON-INFRINGEMENT.
+
+D.2 Limitation of Liability
+CYTHRO SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES, INCLUDING BUT NOT LIMITED TO DATA LOSS, BUSINESS INTERRUPTION, OR SECURITY BREACHES, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+D.3 Maximum Liability
+In no event shall Cythro's total liability exceed the amount paid by you for the Software, if any.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SECTION E: DATA HANDLING AND PRIVACY
+
+E.1 Data Collection
+The Software may collect operational data including:
+- System performance metrics
+- Usage statistics
+- Error reports and diagnostic information
+- Authentication and session data
+
+E.2 Data Usage
+Collected data is used for:
+- Software improvement and optimization
+- Security monitoring and threat detection
+- User support and troubleshooting
+- Service analytics and planning
+
+E.3 Privacy Rights
+Users may request data access or deletion by contacting contact@cythro.com. Requests are processed according to applicable privacy laws.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SECTION F: ENFORCEMENT AND TERMINATION
+
+F.1 Violation Consequences
+Breach of this Agreement results in immediate license termination and may trigger legal action for damages and injunctive relief.
+
+F.2 Termination Effects
+Upon termination:
+- All usage rights cease immediately
+- You must destroy all copies of the Software
+- Cythro may disable your access remotely
+- Certain provisions survive termination
+
+F.3 Enforcement Rights
+Cythro reserves the right to monitor compliance and take appropriate action against violations.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SECTION G: SPECIAL PROVISIONS
+
+G.1 Service Integration
+When connecting external services (GitHub, Discord, etc.), you authorize automatic actions such as repository starring, organization following, or community joining to support the Cythro ecosystem.
+
+G.2 Hosting Provider Requirements
+Organizations offering the Software as a service must:
+- Incorporate this EULA into their terms of service
+- Ensure end-user compliance with this Agreement
+- Maintain proper Cythro attribution
+- Report usage statistics as requested
+
+G.3 Extension Development
+Third-party extensions and plugins are permitted provided they:
+- Do not interfere with core Software functionality
+- Comply with all terms of this Agreement
+- Include appropriate attribution to CythroDash
+- Do not circumvent licensing or authentication systems
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SECTION H: LEGAL FRAMEWORK
+
+H.1 Governing Law
+This Agreement is governed by applicable software licensing laws and international copyright treaties.
+
+H.2 Dispute Resolution
+Disputes shall be resolved through binding arbitration or appropriate legal proceedings in competent jurisdictions.
+
+H.3 Severability
+If any provision is deemed unenforceable, the remainder of this Agreement remains in full effect.
+
+H.4 Entire Agreement
+This Agreement constitutes the complete understanding between parties regarding the Software and supersedes all prior agreements.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+CONTACT INFORMATION
+
+For licensing inquiries, support, or legal matters:
+Email: contact@cythro.com
+Website: https://cythro.com
+
+By using CythroDash, you acknowledge that you have read, understood, and agree to be bound by this End User License Agreement.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Document Version: 1.0
+Last Updated: 2025
+Effective Date: Upon first use of the Software
