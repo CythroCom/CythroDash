@@ -15,7 +15,7 @@ import { useIntegrationSettings } from "@/stores/admin-integrations-store"
 import { usePerformanceMonitor } from "@/hooks/usePerformance"
 import { useIntersectionAnimation } from "@/hooks/useAnimations"
 import Icon from "@/components/IconProvider"
-
+import { useAppConfig } from "@/hooks/use-feature-flags"
 // Validation schema
 const loginSchema = z.object({
   identifier: z.string()
@@ -57,6 +57,9 @@ const LoginForm = memo(({ onSuccess, onRegisterClick, className = "" }: LoginFor
 
   // Auth store
   const { login, isLoading } = useAuthStore()
+
+  // App config
+  const { appName } = useAppConfig()
 
   // Public providers availability (for showing social buttons without admin rights)
   const [providers, setProviders] = useState<{discord:{login:boolean}, github:{login:boolean}} | null>(null)
@@ -185,7 +188,7 @@ const LoginForm = memo(({ onSuccess, onRegisterClick, className = "" }: LoginFor
         </div>
         <CardTitle className="text-2xl font-bold text-white">Welcome Back</CardTitle>
         <CardDescription className="text-neutral-400">
-          Sign in to your Pterodactyl Dashboard account
+          Sign in to your {isLoading ? '' : (appName || 'CythroDash')} account
         </CardDescription>
       </CardHeader>
 

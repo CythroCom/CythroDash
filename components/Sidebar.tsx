@@ -93,7 +93,7 @@ UserProfile.displayName = "UserProfile"
 // Main Sidebar component with optimizations
 const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
   const { appName, description, loading: configLoading } = useAppConfig()
-  const { showServers, showReferrals, showRedeemCodes, loading: featuresLoading } = useNavigationFeatures()
+  const { showServers, showReferrals, showRedeemCodes, showTransfers, loading: featuresLoading } = useNavigationFeatures()
 
   // Prevent rendering errors during initial load
   const isLoading = configLoading || featuresLoading
@@ -113,13 +113,18 @@ const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
       baseItems.push({ icon: "RefreshCw", label: "Redeem" })
     }
 
+    if (showTransfers) {
+      baseItems.push({ icon: "ArrowRight", label: "Transfers" })
+    }
+
     if (showServers) {
-      baseItems.push({ icon: "Gamepad2", label: "Servers" })
+      
+
       baseItems.push({ icon: "Plus", label: "Create Server" })
     }
 
     return baseItems
-  }, [showServers, showReferrals, showRedeemCodes])
+  }, [showServers, showReferrals, showRedeemCodes, showTransfers])
 
   const sidebarItems = items.length > 0 ? items : defaultItems
 
@@ -150,8 +155,9 @@ const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
     const path = window.location.pathname
     if (label === 'Dashboard') return path === '/'
     if (label === 'Referrals') return path.startsWith('/referral')
-    if (label === 'Servers') return path.startsWith('/servers')
+  
     if (label === 'Redeem') return path.startsWith('/redeem')
+    if (label === 'Transfers') return path.startsWith('/transfers')
     if (label === 'Earn') return path.startsWith('/earn')
     if (label === 'Create Server') return path.startsWith('/create-server')
     return false
@@ -164,8 +170,8 @@ const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
   const finalItems = sidebarItems.map(it => {
     if (it.label === 'Referrals') return { ...it, active: isActive('Referrals'), onClick: () => navigate('/referral') }
     if (it.label === 'Dashboard') return { ...it, active: isActive('Dashboard'), onClick: () => navigate('/') }
-    if (it.label === 'Servers') return { ...it, active: isActive('Servers'), onClick: () => navigate('/servers') }
     if (it.label === 'Redeem') return { ...it, active: isActive('Redeem'), onClick: () => navigate('/redeem') }
+    if (it.label === 'Transfers') return { ...it, active: isActive('Transfers'), onClick: () => navigate('/transfers') }
     if (it.label === 'Earn') return { ...it, active: isActive('Earn'), onClick: () => navigate('/earn') }
     if (it.label === 'Create Server') return { ...it, active: isActive('Create Server'), onClick: () => navigate('/create-server') }
     return { ...it, active: typeof it.active === 'boolean' ? it.active : isActive(it.label) }
@@ -233,8 +239,9 @@ const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
           {sidebarItems.map((it, index) => {
             const item = (it.label === 'Referrals') ? { ...it, active: isActive('Referrals'), onClick: () => navigate('/referral') }
               : (it.label === 'Dashboard') ? { ...it, active: isActive('Dashboard'), onClick: () => navigate('/') }
-              : (it.label === 'Servers') ? { ...it, active: isActive('Servers'), onClick: () => navigate('/servers') }
+             
               : (it.label === 'Redeem') ? { ...it, active: isActive('Redeem'), onClick: () => navigate('/redeem') }
+              : (it.label === 'Transfers') ? { ...it, active: isActive('Transfers'), onClick: () => navigate('/transfers') }
               : (it.label === 'Earn') ? { ...it, active: isActive('Earn'), onClick: () => navigate('/earn') }
               : (it.label === 'Admin') ? { ...it, active: isActive('Admin'), onClick: () => navigate('/admin') }
               : (it.label === 'Create Server') ? { ...it, active: isActive('Create Server'), onClick: () => navigate('/create-server') }

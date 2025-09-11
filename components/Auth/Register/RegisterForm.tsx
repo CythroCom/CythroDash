@@ -13,6 +13,7 @@ import { usePerformanceMonitor } from "@/hooks/usePerformance"
 import { useIntersectionAnimation } from "@/hooks/useAnimations"
 import Icon from "@/components/IconProvider"
 import { showError, showSuccess } from "@/lib/toast"
+import { useAppConfig } from "@/hooks/use-feature-flags"
 
 // Validation schema
 const registerSchema = z.object({
@@ -65,6 +66,9 @@ const RegisterForm = memo(({ onSuccess, onLoginClick, className = "", defaultRef
 
   // Auth store
   const { register: registerUser, isLoading } = useAuthStore()
+
+  // App config
+  const { appName } = useAppConfig()
 
   // Form setup
   const {
@@ -171,7 +175,7 @@ const RegisterForm = memo(({ onSuccess, onLoginClick, className = "", defaultRef
         </div>
         <CardTitle className="text-2xl font-bold text-white">Create Account</CardTitle>
         <CardDescription className="text-neutral-400">
-          Join Pterodactyl Dashboard today
+          Join {isLoading ? '' : (appName || 'CythroDash')} today
         </CardDescription>
       </CardHeader>
 

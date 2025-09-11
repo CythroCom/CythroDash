@@ -126,7 +126,8 @@ export const useUserCodeStore = create<UserCodeStore>()(
       isRedemptionsCacheValid: () => {
         const { lastRedemptionsFetch, redemptionsCacheValidDuration } = get()
         if (!lastRedemptionsFetch) return false
-        return new Date().getTime() - lastRedemptionsFetch.getTime() < redemptionsCacheValidDuration
+        const last = typeof lastRedemptionsFetch === 'string' ? new Date(lastRedemptionsFetch) : lastRedemptionsFetch
+        return Date.now() - last.getTime() < redemptionsCacheValidDuration
       },
 
       // Redeem a code
@@ -264,7 +265,8 @@ export const useAdminCodeStore = create<AdminCodeStore>()(
       isCodesCacheValid: () => {
         const { lastCodesFetch, codesCacheValidDuration } = get()
         if (!lastCodesFetch) return false
-        return new Date().getTime() - lastCodesFetch.getTime() < codesCacheValidDuration
+        const last = typeof lastCodesFetch === 'string' ? new Date(lastCodesFetch) : lastCodesFetch
+        return Date.now() - last.getTime() < codesCacheValidDuration
       },
 
       // Get all codes with filtering
@@ -360,9 +362,16 @@ export const useAdminCodeStore = create<AdminCodeStore>()(
           const result = await response.json()
 
           if (result.success) {
-            set({
-              selectedCode: result.code,
-              codeStatistics: result.statistics || null
+            set((prev) => {
+              const updatedCodes = Array.isArray(prev.codes)
+                ? prev.codes.map(c => (c.id === id ? (result.code ?? c) : c))
+                : prev.codes
+              return {
+                ...prev,
+                selectedCode: result.code ?? prev.selectedCode,
+                codeStatistics: result.statistics || null,
+                codes: updatedCodes,
+              }
             })
 
             console.log('Code details retrieved:', {
