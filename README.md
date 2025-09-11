@@ -1,9 +1,6 @@
 # CythroDash
 
-Advanced, modern dashboard for game server management built around Pterodactyl — with a clean admin UI, integrated OAuth, referrals, robust setup tooling, and a safe upgrade flow.
-
-## Introduction
-CythroDash streamlines running a game server business or community: provision servers, manage users, configure plans and integrations, and keep operations healthy with a neutral, consistent admin experience.
+Advanced, modern dashboard for game server management built around Pterodactyl — with a clean UI, useful features, security, and a safe upgrade flow.
 
 ## Features
 - Neutral, responsive UI
@@ -12,6 +9,7 @@ CythroDash streamlines running a game server business or community: provision se
 - Referral system
 - Earn system
 - Redeem Code system
+- Transfers system
 - Robust setup scripts (interactive) and unified installer
 - CLI utilities: status, install, setup:all, upgrade, build, start
 - Safe upgrades that back up DB settings and preserve local config/
