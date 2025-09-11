@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { showError, showSuccess } from "@/lib/toast"
 import { InputField, CheckboxField } from "@/components/forms/FormField"
 import { useAuthStore, type LoginCredentials } from "@/stores/user-store"
+import { useIntegrationSettings } from "@/stores/admin-integrations-store"
 import { usePerformanceMonitor } from "@/hooks/usePerformance"
 import { useIntersectionAnimation } from "@/hooks/useAnimations"
 import Icon from "@/components/IconProvider"
@@ -46,16 +47,34 @@ const LoginForm = memo(({ onSuccess, onRegisterClick, className = "" }: LoginFor
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
-  
+  const { settings: integrationSettings } = useIntegrationSettings()
+
   // Performance monitoring
   usePerformanceMonitor("LoginForm")
-  
+
   // Animation on scroll into view
   const { elementRef } = useIntersectionAnimation({}, 'animate-fade-in')
-  
+
   // Auth store
   const { login, isLoading } = useAuthStore()
-  
+
+  // Public providers availability (for showing social buttons without admin rights)
+  const [providers, setProviders] = useState<{discord:{login:boolean}, github:{login:boolean}} | null>(null)
+  React.useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const res = await fetch('/api/auth/providers', { cache: 'no-store' })
+        const j = await res.json()
+        if (mounted && j?.success && j.providers) setProviders({
+          discord: { login: !!j.providers.discord?.login },
+          github: { login: !!j.providers.github?.login },
+        })
+      } catch {}
+    })()
+    return () => { mounted = false }
+  }, [])
+
   // Form setup
   const {
     register,
@@ -101,8 +120,8 @@ const LoginForm = memo(({ onSuccess, onRegisterClick, className = "" }: LoginFor
           router.push("/")
         }
       } else {
-        const msg = result.errors && Array.isArray(result.errors)
-          ? result.errors.join(", ")
+        const msg = Array.isArray(result.errors)
+          ? result.errors.map((e: any) => typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e))).join(", ")
           : (result.message || "Login failed. Please try again.")
         setServerError(msg)
         showError('Login failed', msg)
@@ -133,6 +152,25 @@ const LoginForm = memo(({ onSuccess, onRegisterClick, className = "" }: LoginFor
   const handleRegisterClick = useCallback(() => {
     onRegisterClick?.()
   }, [onRegisterClick])
+
+  // Social login handlers
+  const handleSocialLogin = useCallback(async (provider: 'discord' | 'github') => {
+    try {
+      setIsSubmitting(true)
+      setServerError(null)
+
+      // Redirect to OAuth provider with flow=login so callback performs login
+      window.location.href = `/api/auth/${provider}?flow=login`
+    } catch (error) {
+      console.error(`${provider} login error:`, error)
+      setServerError(`Failed to initiate ${provider} login`)
+      setIsSubmitting(false)
+    }
+  }, [])
+
+  // Check if social logins are enabled
+  const isDiscordLoginEnabled = !!providers?.discord?.login
+  const isGithubLoginEnabled = !!providers?.github?.login
 
   const isFormDisabled = isSubmitting || isLoading
 
@@ -199,7 +237,7 @@ const LoginForm = memo(({ onSuccess, onRegisterClick, className = "" }: LoginFor
               disabled={isFormDisabled}
               label="Remember me"
             />
-            
+
             <Button
               type="button"
               variant="link"
@@ -228,6 +266,48 @@ const LoginForm = memo(({ onSuccess, onRegisterClick, className = "" }: LoginFor
             )}
           </Button>
         </form>
+
+        {/* Social Login Buttons */}
+        {(isDiscordLoginEnabled || isGithubLoginEnabled) && (
+          <div className="space-y-3">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-neutral-700" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-neutral-900 px-2 text-neutral-400">Or continue with</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {isDiscordLoginEnabled && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-12 bg-[#5865F2] hover:bg-[#4752C4] text-white font-medium rounded-xl transition-colors-fast shadow-lg hover:shadow-xl border-[#5865F2] hover:border-[#4752C4]"
+                  onClick={() => handleSocialLogin('discord')}
+                  disabled={isFormDisabled}
+                >
+                  <Icon name="User" className="h-5 w-5 mr-3" />
+                  Continue with Discord
+                </Button>
+              )}
+
+              {isGithubLoginEnabled && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-12 bg-neutral-800 hover:bg-neutral-700 text-white font-medium rounded-xl transition-colors-fast shadow-lg hover:shadow-xl border-neutral-700 hover:border-neutral-600"
+                  onClick={() => handleSocialLogin('github')}
+                  disabled={isFormDisabled}
+                >
+                  <Icon name="ExternalLink" className="h-5 w-5 mr-3" />
+                  Continue with GitHub
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="text-center">
           <p className="text-neutral-400 text-sm">

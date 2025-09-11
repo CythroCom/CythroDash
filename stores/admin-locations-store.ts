@@ -5,6 +5,21 @@ import { persist } from "zustand/middleware"
 import { useAuthStore } from "./user-store"
 import { LocationStatus, LocationVisibility } from "@/database/tables/cythro_dash_locations"
 
+
+
+// Temporary compatibility: include x-user-data header built from current user
+function getAdminAuthHeaders(): HeadersInit {
+  const base: HeadersInit = { 'Content-Type': 'application/json' }
+  try {
+    const u: any = useAuthStore.getState().currentUser
+    if (u && u.id && u.username && u.email) {
+      return { ...base, 'x-user-data': encodeURIComponent(JSON.stringify({ id: u.id, username: u.username, email: u.email, role: u.role })) }
+    }
+  } catch {}
+  return base
+}
+
+
 // Types for location management
 export type AdminLocationSummary = {
   id: string
@@ -249,9 +264,9 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
 
       // Get locations list with pagination and filtering
       getLocationsList: async (filters: GetLocationsFilters = {}, forceRefresh: boolean = false) => {
-        const { 
-          locationsList, 
-          locationsListLastFetch, 
+        const {
+          locationsList,
+          locationsListLastFetch,
           locationsListLastFilters,
           isLoadingLocationsList,
           isLocationsCacheValid,
@@ -259,8 +274,8 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
         } = get()
 
         // Check if we should use cached data
-        const shouldUseCache = !forceRefresh && 
-                              isLocationsCacheValid() && 
+        const shouldUseCache = !forceRefresh &&
+                              isLocationsCacheValid() &&
                               !shouldRefreshLocationsData(filters) &&
                               locationsList.length > 0
 
@@ -291,7 +306,7 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
 
           // Build query parameters
           const params = new URLSearchParams()
-          
+
           if (filters.page !== undefined) params.append('page', filters.page.toString())
           if (filters.limit !== undefined) params.append('limit', filters.limit.toString())
           if (filters.search) params.append('search', filters.search)
@@ -311,10 +326,7 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
           const response = await fetch(`/api/admin/locations?${params.toString()}`, {
             method: 'GET',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-data': encodeURIComponent(JSON.stringify(currentUser))
-            },
+            headers: getAdminAuthHeaders(),
           })
 
           const result = await response.json()
@@ -397,10 +409,7 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
           const response = await fetch(`/api/admin/locations/${locationId}`, {
             method: 'GET',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-data': encodeURIComponent(JSON.stringify(currentUser))
-            },
+            headers: getAdminAuthHeaders(),
           })
 
           const result = await response.json()
@@ -450,10 +459,7 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
           const response = await fetch('/api/admin/locations', {
             method: 'POST',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-data': encodeURIComponent(JSON.stringify(currentUser))
-            },
+            headers: getAdminAuthHeaders(),
             body: JSON.stringify(locationData)
           })
 
@@ -498,10 +504,7 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
           const response = await fetch(`/api/admin/locations/${locationId}`, {
             method: 'PATCH',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-data': encodeURIComponent(JSON.stringify(currentUser))
-            },
+            headers: getAdminAuthHeaders(),
             body: JSON.stringify(updateData)
           })
 
@@ -555,10 +558,7 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
           const response = await fetch(`/api/admin/locations/${locationId}`, {
             method: 'DELETE',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-data': encodeURIComponent(JSON.stringify(currentUser))
-            },
+            headers: getAdminAuthHeaders(),
           })
 
           const result = await response.json()
@@ -638,10 +638,7 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
           const response = await fetch(`/api/admin/locations/${locationId}/capacity`, {
             method: 'GET',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-data': encodeURIComponent(JSON.stringify(currentUser))
-            },
+            headers: getAdminAuthHeaders(),
           })
 
           const result = await response.json()
@@ -697,10 +694,7 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
           const response = await fetch(`/api/admin/locations/${locationId}/nodes`, {
             method: 'POST',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-data': encodeURIComponent(JSON.stringify(currentUser))
-            },
+            headers: getAdminAuthHeaders(),
             body: JSON.stringify({ node_id: nodeId })
           })
 
@@ -755,10 +749,7 @@ export const useAdminLocationsStore = create<AdminLocationsStore>()(
           const response = await fetch(`/api/admin/locations/${locationId}/nodes`, {
             method: 'DELETE',
             credentials: 'include',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-user-data': encodeURIComponent(JSON.stringify(currentUser))
-            },
+            headers: getAdminAuthHeaders(),
             body: JSON.stringify({ node_id: nodeId })
           })
 

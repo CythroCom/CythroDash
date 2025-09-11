@@ -69,7 +69,8 @@ export async function POST(request: NextRequest) {
     const parsed = createSchema.safeParse(body)
     if (!parsed.success) return NextResponse.json({ success: false, message: 'Invalid payload', errors: parsed.error.errors }, { status: 400 })
 
-    const doc = await shortLinksOperations.createLink({ ...parsed.data, created_by_admin_id: auth.user.id })
+    const createData = { ...parsed.data, description: parsed.data.description ?? undefined, created_by_admin_id: auth.user.id }
+    const doc = await shortLinksOperations.createLink(createData)
     try {
       await SecurityLogsController.createLog({ user_id: auth.user.id, action: SecurityLogAction.ADMIN_ACTION_PERFORMED, severity: SecurityLogSeverity.LOW, description: `Created short link ${doc.slug}`, details: { id: doc.id, slug: doc.slug } })
     } catch {}

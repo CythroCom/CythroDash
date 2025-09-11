@@ -6,8 +6,8 @@
  * are not the responsibility of the original developers.
  */
 
-import { panelNodeGetAll, panelNodeGetDetails, panelServerGetByNode, type PterodactylNode } from '@/hooks/managers/pterodactyl/nodes';
-import { panelServerGetAll, type PterodactylServer } from '@/hooks/managers/pterodactyl/servers';
+import { panelNodeGetAll, panelNodeGetDetails, type PterodactylNode } from '@/hooks/managers/pterodactyl/nodes';
+import { panelServerGetAll, panelServerGetByNode, type PterodactylServer } from '@/hooks/managers/pterodactyl/servers';
 
 // Node resource monitoring interfaces
 export interface NodeResourceUsage {

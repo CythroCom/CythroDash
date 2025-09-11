@@ -1,31 +1,41 @@
 /**
  * CythroDash - Transfer Database Operations
- * 
+ *
  * Fast and efficient transfer operations without loading screens
  */
 
-import { MongoClient, Db, Collection } from 'mongodb';
-import { CythroDashTransfer, transfersCollectionName, defaultTransferValues, TransferStatus, transferValidation } from '@/database/tables/cythro_dash_transfers';
+import { Collection, ObjectId } from 'mongodb';
+import { connectToDatabase } from '../../../database/index';
+import { CythroDashTransfer, transfersCollectionName, defaultTransferValues, TransferStatus, transferValidation, TRANSFERS_INDEXES } from '@/database/tables/cythro_dash_transfers';
 import { userOperations } from './user';
 
 class TransferOperations {
-  private client: MongoClient | null = null;
-  private db: Db | null = null;
+  private collection: Collection<CythroDashTransfer> | null = null;
+  private indexesInitialized = false;
 
-  async connect(): Promise<void> {
-    if (this.client && this.db) return;
-
-    const uri = process.env.MONGODB_URI;
-    if (!uri) throw new Error('MONGODB_URI not found');
-
-    this.client = new MongoClient(uri);
-    await this.client.connect();
-    this.db = this.client.db();
+  private async getCollection(): Promise<Collection<CythroDashTransfer>> {
+    if (!this.collection) {
+      const db = await connectToDatabase();
+      this.collection = db.collection<CythroDashTransfer>(transfersCollectionName);
+    }
+    if (!this.indexesInitialized) {
+      // Set flag before creating indexes to avoid re-entrancy
+      this.indexesInitialized = true;
+      await this.createIndexes();
+    }
+    return this.collection;
   }
 
-  async getCollection(): Promise<Collection<CythroDashTransfer>> {
-    await this.connect();
-    return this.db!.collection<CythroDashTransfer>(transfersCollectionName);
+  private async createIndexes(): Promise<void> {
+    try {
+      const col = this.collection;
+      if (!col) return;
+      for (const index of TRANSFERS_INDEXES) {
+        try { await col.createIndex(index.key as any, { name: index.name, unique: index.unique || false }); } catch {}
+      }
+    } catch (e) {
+      console.error('Transfers index creation failed:', e);
+    }
   }
 
   // Create transfer (atomic transaction)
@@ -89,7 +99,7 @@ class TransferOperations {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const dailyTransfers = await this.getDailyTransferAmount(transferData.from_user_id, today);
-      
+
       if (dailyTransfers + transferData.amount > transferValidation.dailyTransferLimit) {
         return {
           success: false,
@@ -264,7 +274,7 @@ class TransferOperations {
           .skip(offset)
           .limit(limit)
           .toArray(),
-        
+
         collection.countDocuments({
           $or: [
             { from_user_id: userId },
@@ -291,11 +301,72 @@ class TransferOperations {
     }
   }
 
+  // Seek-pagination variant for large datasets
+  async getUserTransfersSeek(
+    userId: number,
+    limit: number = 50,
+    cursor?: { created_at: string; id?: number }
+  ): Promise<{
+    success: boolean;
+    transfers: CythroDashTransfer[];
+    nextCursor?: { created_at: string; id: number } | null;
+    message: string;
+  }> {
+    try {
+      const collection = await this.getCollection();
+
+      const baseFilter = {
+        $or: [
+          { from_user_id: userId },
+          { to_user_id: userId }
+        ]
+      } as any;
+
+      if (cursor?.created_at) {
+        const cDate = new Date(cursor.created_at);
+        const cId = cursor.id ?? Number.MAX_SAFE_INTEGER;
+        baseFilter.$and = [
+          {
+            $or: [
+              { created_at: { $lt: cDate } },
+              { created_at: cDate, id: { $lt: cId } }
+            ]
+          }
+        ];
+      }
+
+      const transfers = await collection
+        .find(baseFilter)
+        .sort({ created_at: -1, id: -1 })
+        .limit(limit)
+        .toArray();
+
+      const last = transfers[transfers.length - 1];
+      const nextCursor = last ? { created_at: last.created_at.toISOString(), id: last.id } : null;
+
+      return {
+        success: true,
+        transfers,
+        nextCursor,
+        message: `Retrieved ${transfers.length} transfers (seek)`
+      };
+    } catch (error) {
+      console.error('Get user transfers (seek) error:', error);
+      return {
+        success: false,
+        transfers: [],
+        nextCursor: null,
+        message: 'Failed to retrieve transfers (seek)'
+      };
+    }
+  }
+
+
   // Get recent transfers for display (super fast)
   async getRecentTransfers(userId: number, limit: number = 10): Promise<CythroDashTransfer[]> {
     try {
       const collection = await this.getCollection();
-      
+
       return await collection
         .find({
           $or: [
@@ -356,7 +427,7 @@ class TransferOperations {
   }[]> {
     try {
       const users = await userOperations.searchUsers(searchTerm, limit + 1);
-      
+
       // Filter out current user and return formatted results
       return users
         .filter(user => user.id !== currentUserId)
@@ -386,13 +457,14 @@ class TransferOperations {
     details: any;
   }): Promise<void> {
     try {
-      const collection = this.db!.collection('cythro_dash_transfer_logs');
+      const db = await connectToDatabase();
+      const collection = db.collection('cythro_dash_transfer_logs');
 
       const logEntry = {
         ...activityData,
         timestamp: new Date(),
-        ip_address: activityData.details.ip_address || 'unknown',
-        user_agent: activityData.details.user_agent || 'unknown'
+        ip_address: activityData.details?.ip_address || 'unknown',
+        user_agent: activityData.details?.user_agent || 'unknown'
       };
 
       await collection.insertOne(logEntry);

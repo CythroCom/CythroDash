@@ -9,6 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AdminGetUsersController, GetUsersRequest } from '@/hooks/managers/controller/Admin/getUsers';
 import { z } from 'zod';
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache'
+import { requireAdmin } from '@/lib/auth/middleware'
 
 // Input validation schema for GET request
 const getUsersSchema = z.object({
@@ -31,59 +33,6 @@ const getUsersSchema = z.object({
   include_referrals: z.coerce.boolean().optional(),
 });
 
-// Authentication function following the established pattern
-async function authenticateRequest(request: NextRequest): Promise<{ success: boolean; user?: any; error?: string }> {
-  try {
-    // Get session token from cookies or Authorization header
-    const authHeader = request.headers.get('authorization');
-    const sessionToken = authHeader?.replace('Bearer ', '') ||
-                        request.cookies.get('session_token')?.value;
-
-    if (!sessionToken) {
-      return {
-        success: false,
-        error: 'No session token found'
-      };
-    }
-
-    // Validate session token format (should be hex string)
-    const hexTokenRegex = /^[a-f0-9]{64}$/i; // 32 bytes = 64 hex characters
-    if (!hexTokenRegex.test(sessionToken)) {
-      return {
-        success: false,
-        error: 'Invalid session token format'
-      };
-    }
-
-    // Get user information from request headers (sent by client)
-    const userDataHeader = request.headers.get('x-user-data');
-    if (userDataHeader) {
-      try {
-        const userData = JSON.parse(decodeURIComponent(userDataHeader));
-
-        if (userData && userData.id && userData.username && userData.email) {
-          return {
-            success: true,
-            user: userData
-          };
-        }
-      } catch (parseError) {
-        console.log('User data header parsing failed:', parseError);
-      }
-    }
-
-    return {
-      success: false,
-      error: 'User identification required'
-    };
-  } catch (error) {
-    console.error('Authentication error:', error);
-    return {
-      success: false,
-      error: 'Authentication failed'
-    };
-  }
-}
 
 /**
  * GET /api/admin/users
@@ -92,21 +41,8 @@ async function authenticateRequest(request: NextRequest): Promise<{ success: boo
 export async function GET(request: NextRequest) {
   try {
     // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin permissions (role 0 = admin)
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.success) return admin.response!;
 
     // Parse and validate query parameters
     const url = new URL(request.url);
@@ -123,17 +59,36 @@ export async function GET(request: NextRequest) {
 
     const getUsersRequest: GetUsersRequest = validation.data;
 
+    // Simple TTL cache for admin users list
+    const t0 = Date.now()
+    const bypass = shouldBypassCache(request.url)
+    const cacheKey = makeKey(['admin_users', admin.user!.id, JSON.stringify(getUsersRequest)])
+    if (!bypass) {
+      const cached = getCache<any>(cacheKey)
+      const ifNoneMatch = request.headers.get('if-none-match') || ''
+      if (cached.hit && cached.value) {
+        const etag = cached.etag || makeETagFromObject(cached.value)
+        if (etag && ifNoneMatch && ifNoneMatch === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } })
+        }
+        return NextResponse.json(cached.value, { status: 200, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } })
+      }
+    }
+
     // Get users using the controller
     const result = await AdminGetUsersController.getUsers(
       getUsersRequest,
-      authResult.user.id
+      admin.user!.id
     );
 
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });
     }
 
-    return NextResponse.json(result, { status: 200 });
+    // Store in cache with short TTL
+    const etag = makeETagFromObject(result)
+    if (!bypass) setCache(cacheKey, result, 20_000, { ETag: etag }, etag)
+    return NextResponse.json(result, { status: 200, headers: { ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` } });
 
   } catch (error) {
     console.error('Error in admin users API:', error);
@@ -144,55 +99,4 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/**
- * GET /api/admin/users/[id]
- * Retrieve a specific user by ID
- */
-export async function getUserById(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin permissions (role 0 = admin)
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
-
-    const userId = parseInt(params.id);
-    if (isNaN(userId)) {
-      return NextResponse.json({
-        success: false,
-        message: 'Invalid user ID'
-      }, { status: 400 });
-    }
-
-    // Get user using the controller
-    const result = await AdminGetUsersController.getUserById(
-      userId,
-      authResult.user.id
-    );
-
-    if (!result.success) {
-      return NextResponse.json(result, { status: 404 });
-    }
-
-    return NextResponse.json(result, { status: 200 });
-
-  } catch (error) {
-    console.error('Error in admin get user by ID API:', error);
-    return NextResponse.json({
-      success: false,
-      message: 'Internal server error'
-    }, { status: 500 });
-  }
-}
 

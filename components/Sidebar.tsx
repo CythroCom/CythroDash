@@ -4,6 +4,8 @@ import React, { memo, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import Icon, { type IconName } from "@/components/IconProvider"
 import { useAuthStore } from "@/stores/user-store"
+import { useAppConfig, useNavigationFeatures } from "@/hooks/use-feature-flags"
+import LoadingOverlay from "@/components/LoadingOverlay"
 
 export interface SidebarItem {
   icon: IconName
@@ -90,15 +92,34 @@ UserProfile.displayName = "UserProfile"
 
 // Main Sidebar component with optimizations
 const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
-  const defaultItems: SidebarItem[] = [
-    { icon: "Activity", label: "Dashboard", active: true },
-    { icon: "DollarSign", label: "Earn" },
-    { icon: "Gift", label: "Referrals" },
-    { icon: "RefreshCw", label: "Redeem" },
-    { icon: "Gamepad2", label: "Servers" },
-    { icon: "Plus", label: "Create Server" },
-    { icon: "UserCheck", label: "Admin" },
-  ]
+  const { appName, description, loading: configLoading } = useAppConfig()
+  const { showServers, showReferrals, showRedeemCodes, loading: featuresLoading } = useNavigationFeatures()
+
+  // Prevent rendering errors during initial load
+  const isLoading = configLoading || featuresLoading
+
+  const defaultItems: SidebarItem[] = useMemo(() => {
+    const baseItems: SidebarItem[] = [
+      { icon: "Activity", label: "Dashboard", active: true },
+      { icon: "DollarSign", label: "Earn" },
+    ]
+
+    // Add conditional items based on feature flags
+    if (showReferrals) {
+      baseItems.push({ icon: "Gift", label: "Referrals" })
+    }
+
+    if (showRedeemCodes) {
+      baseItems.push({ icon: "RefreshCw", label: "Redeem" })
+    }
+
+    if (showServers) {
+      baseItems.push({ icon: "Gamepad2", label: "Servers" })
+      baseItems.push({ icon: "Plus", label: "Create Server" })
+    }
+
+    return baseItems
+  }, [showServers, showReferrals, showRedeemCodes])
 
   const sidebarItems = items.length > 0 ? items : defaultItems
 
@@ -132,7 +153,7 @@ const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
     if (label === 'Servers') return path.startsWith('/servers')
     if (label === 'Redeem') return path.startsWith('/redeem')
     if (label === 'Earn') return path.startsWith('/earn')
-    if (label === 'Admin') return path.startsWith('/admin')
+    if (label === 'Create Server') return path.startsWith('/create-server')
     return false
   }
 
@@ -143,15 +164,22 @@ const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
   const finalItems = sidebarItems.map(it => {
     if (it.label === 'Referrals') return { ...it, active: isActive('Referrals'), onClick: () => navigate('/referral') }
     if (it.label === 'Dashboard') return { ...it, active: isActive('Dashboard'), onClick: () => navigate('/') }
+    if (it.label === 'Servers') return { ...it, active: isActive('Servers'), onClick: () => navigate('/servers') }
+    if (it.label === 'Redeem') return { ...it, active: isActive('Redeem'), onClick: () => navigate('/redeem') }
+    if (it.label === 'Earn') return { ...it, active: isActive('Earn'), onClick: () => navigate('/earn') }
+    if (it.label === 'Create Server') return { ...it, active: isActive('Create Server'), onClick: () => navigate('/create-server') }
     return { ...it, active: typeof it.active === 'boolean' ? it.active : isActive(it.label) }
   })
 
   return (
     <>
+      {/* Global loading overlay to coordinate with main content */}
+      {isLoading && <LoadingOverlay message="Preparing your dashboard..." />}
+
       {/* Mobile overlay */}
       {isOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden" 
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={handleToggle}
         />
       )}
@@ -171,8 +199,12 @@ const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
                   <Icon name="Gamepad2" className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-white tracking-tight">Pterodactyl</h1>
-                  <p className="text-xs text-neutral-400">Game Panel</p>
+                  <h1 className="text-xl font-bold text-white tracking-tight">
+                    {isLoading ? '' : (appName || 'CythroDash')}
+                  </h1>
+                  <p className="text-xs text-neutral-400">
+                    {isLoading ? '' : (description || 'Advanced Pterodactyl Panel Dashboard')}
+                  </p>
                 </div>
               </div>
               <Button
@@ -201,6 +233,11 @@ const Sidebar = memo(({ isOpen, onToggle, items = [], user }: SidebarProps) => {
           {sidebarItems.map((it, index) => {
             const item = (it.label === 'Referrals') ? { ...it, active: isActive('Referrals'), onClick: () => navigate('/referral') }
               : (it.label === 'Dashboard') ? { ...it, active: isActive('Dashboard'), onClick: () => navigate('/') }
+              : (it.label === 'Servers') ? { ...it, active: isActive('Servers'), onClick: () => navigate('/servers') }
+              : (it.label === 'Redeem') ? { ...it, active: isActive('Redeem'), onClick: () => navigate('/redeem') }
+              : (it.label === 'Earn') ? { ...it, active: isActive('Earn'), onClick: () => navigate('/earn') }
+              : (it.label === 'Admin') ? { ...it, active: isActive('Admin'), onClick: () => navigate('/admin') }
+              : (it.label === 'Create Server') ? { ...it, active: isActive('Create Server'), onClick: () => navigate('/create-server') }
               : { ...it, active: typeof it.active === 'boolean' ? it.active : isActive(it.label) }
             return (
               <NavigationItem key={`${item.label}-${index}`} item={item} isOpen={isOpen} />

@@ -11,6 +11,8 @@ import { AdminGetUsersController } from '@/hooks/managers/controller/Admin/getUs
 import { AdminUpdateUserController } from '@/hooks/managers/controller/Admin/updateUser';
 import { AdminDeleteUserController } from '@/hooks/managers/controller/Admin/deleteUser';
 import { z } from 'zod';
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache'
+import { requireAdmin } from '@/lib/auth/middleware'
 
 // Input validation schema for PATCH request
 const updateUserSchema = z.object({
@@ -25,57 +27,7 @@ const updateUserSchema = z.object({
   two_factor_enabled: z.boolean().optional(),
 });
 
-// Authentication function following the established pattern
-async function authenticateRequest(request: NextRequest): Promise<{ success: boolean; user?: any; error?: string }> {
-  try {
-    // Get session token from cookies
-    const sessionToken = request.cookies.get('session_token')?.value;
 
-    if (!sessionToken) {
-      return {
-        success: false,
-        error: 'No session token found'
-      };
-    }
-
-    // Validate session token format (should be hex string)
-    const hexTokenRegex = /^[a-f0-9]{64}$/i; // 32 bytes = 64 hex characters
-    if (!hexTokenRegex.test(sessionToken)) {
-      return {
-        success: false,
-        error: 'Invalid session token format'
-      };
-    }
-
-    // Get user information from request headers (sent by client)
-    const userDataHeader = request.headers.get('x-user-data');
-    if (userDataHeader) {
-      try {
-        const userData = JSON.parse(decodeURIComponent(userDataHeader));
-
-        if (userData && userData.id && userData.username && userData.email) {
-          return {
-            success: true,
-            user: userData
-          };
-        }
-      } catch (parseError) {
-        console.log('User data header parsing failed:', parseError);
-      }
-    }
-
-    return {
-      success: false,
-      error: 'User identification required'
-    };
-  } catch (error) {
-    console.error('Authentication error:', error);
-    return {
-      success: false,
-      error: 'Authentication failed'
-    };
-  }
-}
 
 /**
  * GET /api/admin/users/[id]
@@ -87,21 +39,8 @@ export async function GET(
 ) {
   try {
     // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin role
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.success) return admin.response!;
 
     // Await params before accessing properties
     const resolvedParams = await params;
@@ -113,10 +52,26 @@ export async function GET(
       }, { status: 400 });
     }
 
+    // TTL cache for user details
+    const t0 = Date.now()
+    const bypass = shouldBypassCache(request.url)
+    const cacheKey = makeKey(['admin_user_detail', admin.user!.id, userId])
+    if (!bypass) {
+      const cached = getCache<any>(cacheKey)
+      const ifNoneMatch = request.headers.get('if-none-match') || ''
+      if (cached.hit && cached.value) {
+        const etag = cached.etag || makeETagFromObject(cached.value)
+        if (etag && ifNoneMatch && ifNoneMatch === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } })
+        }
+        return NextResponse.json(cached.value, { status: 200, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } })
+      }
+    }
+
     // Get user data using the dedicated getUserById method
     const result = await AdminGetUsersController.getUserById(
       userId,
-      authResult.user.id
+      admin.user!.id
     );
 
     if (!result.success) {
@@ -126,13 +81,18 @@ export async function GET(
       }, { status: 404 });
     }
 
-    // Return the user data
-    return NextResponse.json({
+    const payload = {
       success: true,
       message: 'User retrieved successfully',
-      users: result.users, // Keep array format for consistency with store
-      user: result.users?.[0] // Also provide single user for convenience
-    });
+      users: result.users,
+      user: result.users?.[0]
+    }
+
+    const etag = makeETagFromObject(payload)
+    if (!bypass) setCache(cacheKey, payload, 20_000, { ETag: etag }, etag)
+
+    // Return the user data
+    return NextResponse.json(payload, { status: 200, headers: { ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` } });
 
   } catch (error) {
     console.error('GET /api/admin/users/[id] error:', error);
@@ -153,21 +113,8 @@ export async function PATCH(
 ) {
   try {
     // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin role
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.success) return admin.response!;
 
     // Await params before accessing properties
     const resolvedParams = await params;
@@ -198,7 +145,7 @@ export async function PATCH(
     const result = await AdminUpdateUserController.updateUser(
       userId,
       updateData,
-      authResult.user.id,
+      admin.user!.id,
       request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
     );
 
@@ -234,21 +181,8 @@ export async function DELETE(
 ) {
   try {
     // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin role
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.success) return admin.response!;
 
     // Await params before accessing properties
     const resolvedParams = await params;
@@ -261,7 +195,7 @@ export async function DELETE(
     }
 
     // Prevent deleting yourself
-    if (userId === authResult.user.id) {
+    if (userId === admin.user!.id) {
       return NextResponse.json({
         success: false,
         message: 'Cannot delete your own account'
@@ -271,7 +205,7 @@ export async function DELETE(
     // Use deleteUser controller
     const result = await AdminDeleteUserController.deleteUser(
       userId,
-      authResult.user.id,
+      admin.user!.id,
       request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
     );
 

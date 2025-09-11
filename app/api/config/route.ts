@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import settingsOperations from '@/hooks/managers/database/settings'
+import { SAFE_SETTINGS } from '@/database/tables/cythro_dash_settings'
 
 export const runtime = 'nodejs'
 
@@ -24,10 +25,17 @@ export async function GET(_req: NextRequest) {
     }
   } catch {}
 
+  // Apply SAFE default values on top of env
+  const withDefaults: Record<string, any> = { ...envMap }
+  for (const def of SAFE_SETTINGS) {
+    if (!def.key.startsWith('NEXT_PUBLIC_')) continue
+    if (withDefaults[def.key] === undefined) withDefaults[def.key] = def.default
+  }
+
   try {
-    // DB-first values override env fallback
+    // DB-first values override defaults and env fallback
     const all = await settingsOperations.getSettings()
-    const map: Record<string, any> = { ...envMap }
+    const map: Record<string, any> = { ...withDefaults }
     for (const s of all) {
       if (!s.key.startsWith('NEXT_PUBLIC_')) continue
       if (s.data_type === 'boolean') map[s.key] = s.value === 'true'
@@ -37,8 +45,8 @@ export async function GET(_req: NextRequest) {
     }
     return NextResponse.json({ success: true, config: map })
   } catch (e) {
-    // If DB is unavailable, still return env-only config
-    return NextResponse.json({ success: true, config: envMap })
+    // If DB is unavailable, return defaults+env config
+    return NextResponse.json({ success: true, config: withDefaults })
   }
 }
 

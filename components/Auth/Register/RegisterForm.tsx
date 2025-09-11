@@ -132,8 +132,8 @@ const RegisterForm = memo(({ onSuccess, onLoginClick, className = "", defaultRef
           }
         }, 1200)
       } else {
-        const msg = result.errors && Array.isArray(result.errors)
-          ? result.errors.join(", ")
+        const msg = Array.isArray(result.errors)
+          ? result.errors.map((e: any) => typeof e === 'string' ? e : (e?.message ?? JSON.stringify(e))).join(", ")
           : (result.message || "Registration failed. Please try again.")
         setServerError(msg)
         showError('Registration failed', msg)

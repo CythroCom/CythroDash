@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { serverTypeOperations } from '@/hooks/managers/database/server-type';
 import { ServerTypeCategory } from '@/database/tables/cythro_dash_server_types';
 import { z } from 'zod';
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache';
 
 // Input validation schema for GET request
 const getServerTypesSchema = z.object({
@@ -168,6 +169,27 @@ export async function GET(request: NextRequest) {
     const filters = validation.data;
     const user = authResult.user;
 
+    // Cache (per-user + filters)
+    const t0 = Date.now();
+    const bypass = shouldBypassCache(request.url);
+    const cacheKey = makeKey([
+      'server_types', user.id,
+      filters.category || '', filters.featured ?? '', filters.popular ?? '',
+      filters.location_id || '', filters.plan_id || '', filters.search || '',
+      filters.include_stats ?? false
+    ]);
+    if (!bypass) {
+      const cached = getCache<any>(cacheKey);
+      const ifNoneMatch = request.headers.get('if-none-match') || '';
+      if (cached.hit && cached.value) {
+        const etag = cached.etag || makeETagFromObject(cached.value);
+        if (etag && ifNoneMatch && ifNoneMatch === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+        }
+        return NextResponse.json(cached.value, { status: 200, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+      }
+    }
+
     // Build filters for server type query
     const serverTypeFilters: any = {
       userId: user.id,
@@ -230,10 +252,25 @@ export async function GET(request: NextRequest) {
       serverTypes = await serverTypeOperations.getServerTypeSummaries(serverTypeFilters);
     }
 
-    // Get statistics if requested
+    // Get statistics if requested (user-filtered, to match returned data)
     let stats = null;
     if (filters.include_stats) {
-      stats = await serverTypeOperations.getServerTypeStats();
+      // Initialize categories count with all categories set to 0
+      const categoriesInit: Record<string, number> = {} as any;
+      Object.values(ServerTypeCategory).forEach(cat => { categoriesInit[cat] = 0 })
+
+      // serverTypes may be summaries; count by available fields
+      const totals = serverTypes.reduce((acc: any, st: any) => {
+        const cat = st.category || 'other'
+        acc.categories[cat] = (acc.categories[cat] || 0) + 1
+        if (st.featured) acc.featured_count++
+        if (st.popular) acc.popular_count++
+        acc.total_types++
+        acc.active_types++ // all returned are active/user-available
+        return acc
+      }, { total_types: 0, active_types: 0, categories: { ...categoriesInit }, featured_count: 0, popular_count: 0 })
+
+      stats = totals
     }
 
     // Set rate limit headers
@@ -243,7 +280,7 @@ export async function GET(request: NextRequest) {
       'X-RateLimit-Reset': Math.ceil(rateLimitResult.resetTime / 1000).toString()
     };
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       message: 'Server types retrieved successfully',
       server_types: serverTypes,
@@ -251,11 +288,17 @@ export async function GET(request: NextRequest) {
       user_permissions: {
         can_create_servers: user.role <= 1, // Users and admins can create servers
         max_servers: user.max_servers || null,
-        requires_verification: !user.verified
+        requires_verification: !user.verified,
+        current_balance: user.coins || 0
       }
-    }, { 
+    };
+
+    const etag = makeETagFromObject(payload);
+    if (!bypass) setCache(cacheKey, payload, 60_000, { ...responseHeaders, ETag: etag }, etag);
+
+    return NextResponse.json(payload, {
       status: 200,
-      headers: responseHeaders
+      headers: { ...responseHeaders, ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` }
     });
 
   } catch (error) {

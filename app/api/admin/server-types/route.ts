@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { 
-  CythroDashServerType, 
-  ServerTypeCategory, 
+import {
+  CythroDashServerType,
+  ServerTypeCategory,
   ServerTypeStatus,
   ServerTypeHelpers,
-  SERVER_TYPES_COLLECTION 
+  SERVER_TYPES_COLLECTION
 } from '@/database/tables/cythro_dash_server_types'
 import { serverTypesGetAll, serverTypesCreate } from '@/hooks/managers/database/server-type'
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache'
+import { compressedJson } from '@/lib/compress'
 
 // Validation schemas
 const createServerTypeSchema = z.object({
@@ -94,21 +96,18 @@ export async function GET(request: NextRequest) {
     // Check authentication
     const authResult = checkAdminAuth(request)
     if (!authResult.success) {
-      return NextResponse.json(
-        { success: false, message: authResult.error },
-        { status: 401 }
-      )
+      return compressedJson(request, { success: false, message: authResult.error }, 401)
     }
 
     // Parse and validate query parameters
     const { searchParams } = new URL(request.url)
     const queryParams = Object.fromEntries(searchParams.entries())
-    
+
     const validatedParams = getServerTypesSchema.parse(queryParams)
 
     // Build filters for database query
     const filters: any = {}
-    
+
     if (validatedParams.search) {
       filters.$or = [
         { name: { $regex: validatedParams.search, $options: 'i' } },
@@ -129,6 +128,22 @@ export async function GET(request: NextRequest) {
     const sortOptions: any = {}
     sortOptions[validatedParams.sort_by] = validatedParams.sort_order === 'asc' ? 1 : -1
 
+    // Cache lookup
+    const t0 = Date.now()
+    const bypass = shouldBypassCache(request.url)
+    const cacheKey = makeKey(['admin_server_types', authResult.success ? 'admin' : 'anon', JSON.stringify({ filters, sortOptions, page: validatedParams.page, limit: validatedParams.limit, include_stats: validatedParams.include_stats })])
+    if (!bypass) {
+      const cached = getCache<any>(cacheKey)
+      const ifNoneMatch = request.headers.get('if-none-match') || ''
+      if (cached.hit && cached.value) {
+        const etag = cached.etag || makeETagFromObject(cached.value)
+        if (etag && ifNoneMatch && ifNoneMatch === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } })
+        }
+        return compressedJson(request, cached.value, 200, { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` })
+      }
+    }
+
     // Get server types from database
     const result = await serverTypesGetAll({
       filters,
@@ -139,13 +154,10 @@ export async function GET(request: NextRequest) {
     })
 
     if (!result.success) {
-      return NextResponse.json(
-        { success: false, message: result.message || 'Failed to fetch server types' },
-        { status: 500 }
-      )
+      return compressedJson(request, { success: false, message: result.message || 'Failed to fetch server types' }, 500)
     }
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       data: {
         server_types: result.data?.server_types || [],
@@ -157,26 +169,20 @@ export async function GET(request: NextRequest) {
         },
         stats: validatedParams.include_stats ? result.data?.stats : undefined
       }
-    })
+    }
+
+    const etag = makeETagFromObject(payload)
+    if (!bypass) setCache(cacheKey, payload, 20_000, { ETag: etag }, etag)
+    return compressedJson(request, payload, 200, { ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` })
 
   } catch (error) {
     console.error('Error in GET /api/admin/server-types:', error)
-    
+
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: 'Invalid request parameters',
-          errors: error.errors 
-        },
-        { status: 400 }
-      )
+      return compressedJson(request, { success: false, message: 'Invalid request parameters', errors: error.errors }, 400)
     }
 
-    return NextResponse.json(
-      { success: false, message: 'Internal server error' },
-      { status: 500 }
-    )
+    return compressedJson(request, { success: false, message: 'Internal server error' }, 500)
   }
 }
 

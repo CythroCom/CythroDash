@@ -60,7 +60,7 @@ const ListHeader = memo(({ onCreateServer }: { onCreateServer?: () => void }) =>
         className="gap-3 bg-neutral-600/10 hover:bg-neutral-600/20 text-neutral-300 border border-neutral-500/20 h-12 px-6 rounded-xl font-medium shadow-lg hover:shadow-xl transition-all duration-200 focus:bg-neutral-600/20 focus:ring-0 focus:outline-none"
         onClick={handleCreateServer}
       >
-        <Icon name="Plus" className="h-5 w-5" />
+        <Icon name="Plus" className="h-5 w-5" href="/create-server"/>
         Create Server
       </Button>
     </div>
@@ -155,7 +155,7 @@ const ServerList = memo(({
             className="gap-3 bg-neutral-600/10 hover:bg-neutral-600/20 text-neutral-300 border border-neutral-500/20 h-12 px-6 rounded-xl font-medium shadow-lg hover:shadow-xl transition-all duration-200"
             onClick={handleCreateServer}
           >
-            <Icon name="Plus" className="h-5 w-5" />
+            <Icon name="Plus" className="h-5 w-5"  />
             Create Server
           </Button>
         </div>

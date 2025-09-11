@@ -10,6 +10,8 @@ import { preloadCriticalComponents } from '@/components/LazyComponents'
 import { Sidebar, Header } from '@/components/LazyComponents'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertCircle, Star, Trophy, Crown, Gem } from 'lucide-react'
+import LoadingOverlay from '@/components/LoadingOverlay'
+import { useAppBootstrap } from '@/hooks/use-bootstrap'
 
 // Import referral components (will create these to match backup)
 import ReferralHero from '@/components/Referral/ReferralHero'
@@ -98,6 +100,9 @@ export default function ReferralPage() {
   const handleSidebarToggle = useCallback(() => setSidebarOpen(prev => !prev), [])
   const handleMenuClick = useCallback(() => setSidebarOpen(true), [])
   const handleSearchChange = useCallback((q: string) => setSearchQuery(q), [])
+
+  // Global bootstrap (session + public settings) must be before any early returns
+  const { isLoading: bootLoading } = useAppBootstrap()
 
   // Handle claim rewards (matching backup implementation)
   const handleClaimRewards = async () => {
@@ -190,6 +195,7 @@ export default function ReferralPage() {
 
   return (
     <div className="min-h-screen bg-neutral-900">
+      {bootLoading && <LoadingOverlay message="Preparing your dashboard..." />}
       <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
 
       <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>

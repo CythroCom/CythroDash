@@ -125,13 +125,13 @@ export const useAuthStore = create<AuthStore>()(
       sessionToken: null,
       isLoading: false,
 
-      // Real-time updates
-      autoRefreshEnabled: true, // Enable by default
-      autoRefreshInterval: 30000, // 30 seconds
+      
+      autoRefreshEnabled: true,
+      autoRefreshInterval: 30000,
       lastUserDataRefresh: null,
       isRefreshingUserData: false,
 
-      // Security logs cache
+     
       securityLogs: [],
       securityStats: null,
       securityLogsLastFetch: null,
@@ -238,18 +238,18 @@ export const useAuthStore = create<AuthStore>()(
 
         // If we don't have a session token, return false
         if (!sessionToken) {
-          console.log('❌ No session token available')
+          console.log(' No session token available')
           return false
         }
 
         // If we have all required data and it's not a forced refresh, consider session valid
         if (!forceRefresh && isAuthenticated && currentUser && sessionToken) {
-          console.log('✅ Session already valid, skipping refresh')
+          console.log(' Session already valid, skipping refresh')
           return true
         }
 
         // For forced refresh or validation, check if session data is complete
-        console.log('🔍 Validating session data locally...')
+        console.log(' Validating session data locally...')
         
         try {
           // Basic validation: check if we have required user data
@@ -259,7 +259,7 @@ export const useAuthStore = create<AuthStore>()(
               currentUser.email && 
               typeof currentUser.role === 'number') {
             
-            console.log('✅ Session validation successful:', {
+            console.log(' Session validation successful:', {
               userId: currentUser.id,
               username: currentUser.username,
               role: currentUser.role
@@ -268,12 +268,12 @@ export const useAuthStore = create<AuthStore>()(
             // Session is valid - return true
             return true
           } else {
-            console.log('❌ Session validation failed: incomplete user data')
+            console.log(' Session validation failed: incomplete user data')
             get().clearSession()
             return false
           }
         } catch (error) {
-          console.error('💥 Session validation error:', error)
+          console.error(' Session validation error:', error)
           return false
         }
       },
@@ -290,13 +290,13 @@ export const useAuthStore = create<AuthStore>()(
         } = get()
 
         if (!isAuthenticated || !currentUser || !sessionToken) {
-          console.log('❌ Cannot refresh: not authenticated or no session token')
+          console.log(' Cannot refresh: not authenticated or no session token')
           return false
         }
 
         // Prevent multiple simultaneous requests
         if (isRefreshingUserData && !force) {
-          console.log('⏳ Refresh already in progress')
+          console.log(' Refresh already in progress')
           return false
         }
 
@@ -304,14 +304,14 @@ export const useAuthStore = create<AuthStore>()(
         if (!force && lastUserDataRefresh) {
           const timeSinceLastRefresh = Date.now() - lastUserDataRefresh.getTime()
           if (timeSinceLastRefresh < autoRefreshInterval) {
-            console.log(`⏰ Too soon to refresh (${timeSinceLastRefresh}ms < ${autoRefreshInterval}ms)`)
+            console.log(` Too soon to refresh (${timeSinceLastRefresh}ms < ${autoRefreshInterval}ms)`)
             return true // Still valid, no need to refresh
           }
         }
 
         try {
           set({ isRefreshingUserData: true })
-          console.log('🔄 Fetching fresh user data from database...')
+          console.log(' Fetching fresh user data from database...')
 
           // Fetch fresh user data from the database
           const response = await fetch('/api/user/me', {
@@ -334,13 +334,13 @@ export const useAuthStore = create<AuthStore>()(
               const coinsChanged = currentUser.coins !== newUserData.coins
               
               if (roleChanged) {
-                console.log(`🔄 Role updated: ${currentUser.role} → ${newUserData.role}`)
+                console.log(` Role updated: ${currentUser.role} → ${newUserData.role}`)
               }
               if (emailChanged) {
-                console.log(`📧 Email updated: ${currentUser.email} → ${newUserData.email}`)
+                console.log(` Email updated: ${currentUser.email} → ${newUserData.email}`)
               }
               if (coinsChanged) {
-                console.log(`💰 Coins updated: ${currentUser.coins} → ${newUserData.coins}`)
+                console.log(` Coins updated: ${currentUser.coins} → ${newUserData.coins}`)
               }
               
               // Update user data but keep existing session token
@@ -350,18 +350,18 @@ export const useAuthStore = create<AuthStore>()(
                 lastUserDataRefresh: new Date(),
                 isRefreshingUserData: false 
               })
-              console.log('✅ User data refresh completed successfully')
+              console.log(' User data refresh completed successfully')
               return true
             }
           }
           
           // If we get here, the API call failed
           set({ isRefreshingUserData: false })
-          console.log('❌ User data refresh failed - API response not successful')
+          console.log(' User data refresh failed - API response not successful')
           return false
           
         } catch (error) {
-          console.error('💥 User data refresh error:', error)
+          console.error(' User data refresh error:', error)
           set({ isRefreshingUserData: false })
           return false
         }

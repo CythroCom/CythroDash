@@ -10,6 +10,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LocationController, GetLocationsRequest, CreateLocationRequest } from '@/hooks/managers/controller/Admin/LocationController';
 import { LocationStatus, LocationVisibility } from '@/database/tables/cythro_dash_locations';
 import { z } from 'zod';
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache'
+import { compressedJson } from '@/lib/compress'
+import { requireAdmin } from '@/lib/auth/middleware'
 
 // Input validation schema for GET request
 const getLocationsSchema = z.object({
@@ -53,58 +56,7 @@ const createLocationSchema = z.object({
   }).optional(),
 });
 
-// Authentication function following the established pattern
-async function authenticateRequest(request: NextRequest): Promise<{ success: boolean; user?: any; error?: string }> {
-  try {
-    // Get session token from cookies
-    const sessionToken = request.cookies.get('session_token')?.value;
 
-    if (!sessionToken) {
-      return {
-        success: false,
-        error: 'No session token found'
-      };
-    }
-
-    // Validate session token format (should be hex string)
-    const hexTokenRegex = /^[a-f0-9]{64}$/i; // 32 bytes = 64 hex characters
-    if (!hexTokenRegex.test(sessionToken)) {
-      return {
-        success: false,
-        error: 'Invalid session token format'
-      };
-    }
-
-    // Get user information from request headers (sent by client)
-    const userDataHeader = request.headers.get('x-user-data');
-    if (userDataHeader) {
-      try {
-        const userData = JSON.parse(decodeURIComponent(userDataHeader));
-
-        if (userData && userData.id && userData.username && userData.email) {
-          return {
-            success: true,
-            user: userData
-          };
-        }
-      } catch (parseError) {
-        console.log('User data header parsing failed:', parseError);
-      }
-    }
-
-    return {
-      success: false,
-      error: 'User identification required'
-    };
-
-  } catch (error) {
-    console.error('Authentication error:', error);
-    return {
-      success: false,
-      error: 'Authentication failed'
-    };
-  }
-}
 
 /**
  * GET /api/admin/locations
@@ -113,55 +65,54 @@ async function authenticateRequest(request: NextRequest): Promise<{ success: boo
 export async function GET(request: NextRequest) {
   try {
     // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin permissions (role 0 = admin)
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
+    const admin = await requireAdmin(request)
+    if (!admin.success) return admin.response!
 
     // Parse and validate query parameters
     const url = new URL(request.url);
     const queryParams = Object.fromEntries(url.searchParams.entries());
-    
+
     const validation = getLocationsSchema.safeParse(queryParams);
     if (!validation.success) {
-      return NextResponse.json({
-        success: false,
-        message: 'Invalid query parameters',
-        errors: validation.error.errors
-      }, { status: 400 });
+      return compressedJson(request, { success: false, message: 'Invalid query parameters', errors: validation.error.errors }, 400)
     }
 
     const getLocationsRequest: GetLocationsRequest = validation.data;
 
+    // Cache lookup
+    const t0 = Date.now()
+    const bypass = shouldBypassCache(request.url)
+    const cacheKey = makeKey(['admin_locations', admin.user!.id, JSON.stringify(getLocationsRequest)])
+    if (!bypass) {
+      const cached = getCache<any>(cacheKey)
+      const ifNoneMatch = request.headers.get('if-none-match') || ''
+      if (cached.hit && cached.value) {
+        const etag = cached.etag || makeETagFromObject(cached.value)
+        if (etag && ifNoneMatch && ifNoneMatch === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } })
+        }
+        return compressedJson(request, cached.value, 200, { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` })
+      }
+    }
+
     // Get locations using the controller
     const result = await LocationController.getLocations(
       getLocationsRequest,
-      authResult.user.id
+      admin.user!.id
     );
 
     if (!result.success) {
-      return NextResponse.json(result, { status: 400 });
+      return compressedJson(request, result, 400)
     }
 
-    return NextResponse.json(result, { status: 200 });
+    // Store in cache with short TTL
+    const etag = makeETagFromObject(result)
+    if (!bypass) setCache(cacheKey, result, 20_000, { ETag: etag }, etag)
+    return compressedJson(request, result, 200, { ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` })
 
   } catch (error) {
     console.error('GET /api/admin/locations error:', error);
-    return NextResponse.json({
-      success: false,
-      message: 'An unexpected error occurred while retrieving locations'
-    }, { status: 500 });
+    return compressedJson(request, { success: false, message: 'An unexpected error occurred while retrieving locations' }, 500)
   }
 }
 
@@ -172,21 +123,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin permissions (role 0 = admin)
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.success) return admin.response!;
 
     // Parse and validate request body
     const body = await request.json();
@@ -210,7 +148,7 @@ export async function POST(request: NextRequest) {
     // Create location using the controller
     const result = await LocationController.createLocation(
       createLocationRequest,
-      authResult.user.id,
+      admin.user!.id,
       clientIP
     );
 

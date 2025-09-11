@@ -4,6 +4,17 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
 export type ServerStatus = "online" | "offline" | "starting" | "stopping" | "unknown"
+// Format uptime as Hh Mm Ss (compact)
+const formatUptime = (totalSeconds: number): string => {
+  const s = Math.max(0, Math.floor(totalSeconds || 0))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  if (h > 0) return `${h}h ${m}m ${sec}s`
+  if (m > 0) return `${m}m ${sec}s`
+  return `${sec}s`
+}
+
 export type ServerType = "Minecraft" | "Rust" | "CS:GO" | "Valheim" | "ARK" | "Discord" | "Web" | "Database" | "Game" | "Unknown"
 
 export interface ServerResources {
@@ -41,6 +52,8 @@ export type Server = {
   name: string
   description?: string
   status: ServerStatus
+  power_state?: ServerStatus | 'crashed'
+  billing_status?: 'active' | 'overdue' | 'suspended' | 'cancelled' | 'terminated'
 
   // Resource information
   resources?: ServerResources
@@ -64,6 +77,7 @@ export type Server = {
   cpu: string
   memory: string
   uptime: string
+  uptime_seconds?: number
   type: ServerType
 }
 
@@ -106,6 +120,12 @@ type ServerStore = {
   }>
   fetchLiveDetails: (server: { id: string; pterodactyl_id?: number | string }) => Promise<any>
   powerAction: (server: { id: string; pterodactyl_id?: number | string }, action: 'start'|'stop'|'restart'|'kill') => Promise<boolean>
+
+  // Centralized live updates
+  startLivePolling: (ids?: string[]) => void
+  stopLivePolling: () => void
+  startUptimeTicker: () => void
+  stopUptimeTicker: () => void
 
   // Legacy actions (for backward compatibility)
   create: (data: Partial<Server>) => Server
@@ -294,7 +314,7 @@ export const useServerStore = create<ServerStore>()(
             id: currentUser.id, username: currentUser.username, email: currentUser.email, role: currentUser.role
           }))
 
-          const idParam = server.id
+          const idParam = (server.pterodactyl_id ?? server.id).toString()
           const resp = await fetch(`/api/client/servers/${idParam}/status`, { headers, credentials: 'include' })
           const json = await resp.json()
           if (json.success && json.data) {
@@ -310,13 +330,15 @@ export const useServerStore = create<ServerStore>()(
               const memUsedMb = Math.round((live.memory_bytes || 0) / (1024*1024))
               const memPct = Math.min(100, Math.round(memLimitMb ? (memUsedMb / memLimitMb) * 100 : 0))
               const diskUsedGb = Math.round((live.disk_bytes || 0) / (1024*1024*1024))
+              const uptimeSec = live.uptime_ms ? Math.round(live.uptime_ms/1000) : (s[idx].uptime_seconds ?? 0)
 
               const updated: Server = {
                 ...s[idx],
                 status,
                 cpu: `${Math.round(live.cpu_absolute || 0)}%`,
                 memory: `${memUsedMb}MB/${memLimitMb}MB`,
-                uptime: live.uptime_ms ? `${Math.round(live.uptime_ms/1000)}s` : s[idx].uptime,
+                uptime: formatUptime(uptimeSec),
+                uptime_seconds: uptimeSec,
                 resources: {
                   memory: { used: memUsedMb, limit: memLimitMb, percentage: memPct },
                   disk: { used: diskUsedGb, limit: s[idx].resources?.disk.limit ?? 0, percentage: s[idx].resources?.disk.percentage ?? 0 },
@@ -342,7 +364,7 @@ export const useServerStore = create<ServerStore>()(
           headers['x-user-data'] = encodeURIComponent(JSON.stringify({
             id: currentUser.id, username: currentUser.username, email: currentUser.email, role: currentUser.role
           }))
-          const idParam = server.id
+          const idParam = (server.pterodactyl_id ?? server.id).toString()
           const resp = await fetch(`/api/client/servers/${idParam}/details`, { headers, credentials: 'include' })
           return await resp.json()
         } catch (e) {
@@ -360,7 +382,7 @@ export const useServerStore = create<ServerStore>()(
           headers['x-user-data'] = encodeURIComponent(JSON.stringify({
             id: currentUser.id, username: currentUser.username, email: currentUser.email, role: currentUser.role
           }))
-          const idParam = server.id
+          const idParam = (server.pterodactyl_id ?? server.id).toString()
           const resp = await fetch(`/api/client/servers/${idParam}/power`, {
             method: 'POST', headers, credentials: 'include', body: JSON.stringify({ action })
           })
@@ -404,6 +426,59 @@ export const useServerStore = create<ServerStore>()(
         return get().servers.find((sv) => sv.id === idStr)
       },
 
+      // Centralized live polling for multiple servers (2s interval)
+      startLivePolling: (ids?: string[]) => {
+        const state = get() as any
+        if (state._livePollTimer) return
+        const poll = async () => {
+          const serverIds = (ids && ids.length ? ids : get().servers.map(s => s.id))
+            .map(String)
+          if (serverIds.length === 0) return
+          try {
+            await Promise.all(serverIds.map(id => (get() as any).fetchLiveStatus({ id })))
+          } catch {}
+        }
+        // Immediate run then interval
+        void poll()
+        const t = setInterval(poll, 2000)
+        ;(state as any)._livePollTimer = t
+      },
+
+      stopLivePolling: () => {
+        const state = get() as any
+        if (state._livePollTimer) {
+          clearInterval(state._livePollTimer)
+          state._livePollTimer = undefined
+        }
+      },
+
+      // Per-second uptime ticker (no API calls)
+      startUptimeTicker: () => {
+        const state = get() as any
+        if (state._uptimeTimer) return
+        const t = setInterval(() => {
+          const s = get().servers
+          if (!s || s.length === 0) return
+          const updated = s.map(sv => {
+            if ((sv.status === 'online' || sv.status === 'starting') && typeof sv.uptime_seconds === 'number') {
+              const next = { ...sv, uptime_seconds: (sv.uptime_seconds || 0) + 1, uptime: formatUptime((sv.uptime_seconds || 0) + 1) }
+              return next
+            }
+            return sv
+          })
+          set({ servers: updated })
+        }, 1000)
+        ;(state as any)._uptimeTimer = t
+      },
+
+      stopUptimeTicker: () => {
+        const state = get() as any
+        if (state._uptimeTimer) {
+          clearInterval(state._uptimeTimer)
+          state._uptimeTimer = undefined
+        }
+      },
+
       // Clear error
       clearError: () => {
         set({ error: null })
@@ -411,6 +486,9 @@ export const useServerStore = create<ServerStore>()(
 
       // Clear cache
       clearCache: () => {
+        const state = get() as any
+        if (state._livePollTimer) { clearInterval(state._livePollTimer); state._livePollTimer = undefined }
+        if (state._uptimeTimer) { clearInterval(state._uptimeTimer); state._uptimeTimer = undefined }
         set({
           servers: [],
           userPermissions: null,

@@ -7,6 +7,7 @@
  */
 
 import { userLogsOperations } from '../../database/user-logs';
+import { LogCategory } from '@/types/errors-and-logs';
 import {
   CythroDashUserLog,
   CreateUserLogData,
@@ -257,7 +258,7 @@ export class SecurityLogsController {
       action: action,
       severity: severity,
       description: description,
-      details: details,
+      details: { ...(details || {}), category: LogCategory.ACCOUNT },
       ip_address: ipAddress,
       user_agent: userAgent,
       is_suspicious: !success
@@ -279,7 +280,7 @@ export class SecurityLogsController {
       action: SecurityLogAction.PASSWORD_CHANGED,
       severity: SecurityLogSeverity.MEDIUM,
       description: success ? 'Password changed successfully' : 'Password change failed',
-      details: { pterodactyl_synced: pterodactylSynced },
+      details: { pterodactyl_synced: pterodactylSynced, category: LogCategory.ACCOUNT },
       ip_address: ipAddress,
       user_agent: userAgent,
       requires_attention: !success
@@ -300,7 +301,7 @@ export class SecurityLogsController {
       action: SecurityLogAction.PROFILE_UPDATED,
       severity: SecurityLogSeverity.LOW,
       description: `Profile updated: ${changes.join(', ')}`,
-      details: { changed_fields: changes },
+      details: { changed_fields: changes, category: LogCategory.ACCOUNT },
       ip_address: ipAddress,
       user_agent: userAgent
     });

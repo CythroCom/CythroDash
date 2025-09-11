@@ -8,10 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-// Discord OAuth configuration
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
-const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || `${process.env.NEXT_PUBLIC_URL}/api/auth/discord/callback`;
+// Discord OAuth configuration will be resolved at request time from DB config with env fallback
 
 /**
  * GET /api/auth/discord
@@ -19,24 +16,31 @@ const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI || `${process.env.
  */
 export async function GET(request: NextRequest) {
   try {
+    const { getConfig } = await import('@/database/config-manager.js')
+    const DISCORD_CLIENT_ID = await (getConfig as any)('integrations.discord.client_id', process.env.DISCORD_CLIENT_ID)
+    const DISCORD_REDIRECT_URI = await (getConfig as any)('integrations.discord.redirect_uri', process.env.DISCORD_REDIRECT_URI || `${process.env.NEXT_PUBLIC_URL || (request.nextUrl && request.nextUrl.origin)}/api/auth/discord/callback`)
+
     if (!DISCORD_CLIENT_ID) {
       return NextResponse.json({
         success: false,
-        message: 'Discord OAuth not configured. Please set DISCORD_CLIENT_ID in environment variables.',
+        message: 'Discord OAuth not configured. Please set up Discord credentials.',
         error: 'DISCORD_NOT_CONFIGURED'
       }, { status: 500 });
     }
 
+    // Determine flow (login vs connect). Default to 'connect' for settings connections
+    const flow = request.nextUrl.searchParams.get('flow') === 'login' ? 'login' : 'connect'
+
     // Generate state parameter for security
     const state = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    
+
     // Store state in session/cookie for verification (simplified approach)
     const response = NextResponse.redirect(
       `https://discord.com/api/oauth2/authorize?` +
       `client_id=${DISCORD_CLIENT_ID}&` +
       `redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&` +
       `response_type=code&` +
-      `scope=identify%20guilds%20guilds.join&` +
+      `scope=identify&` +
       `state=${state}`
     );
 
@@ -46,6 +50,14 @@ export async function GET(request: NextRequest) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 600 // 10 minutes
+    });
+
+    // Also set flow cookie so callback can branch behavior
+    response.cookies.set('discord_oauth_flow', flow, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 600
     });
 
     return response;

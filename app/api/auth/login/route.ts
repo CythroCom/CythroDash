@@ -145,6 +145,19 @@ export async function POST(request: NextRequest) {
       const cookieOptions = getSessionCookieOptions(remember_me);
       response.cookies.set('session_token', loginResult.session.token, cookieOptions);
 
+      // Also set httpOnly cookie with minimal user context to support API auth without headers
+      const minimalUser = {
+        id: loginResult.user.id,
+        username: loginResult.user.username,
+        email: loginResult.user.email,
+        role: loginResult.user.role
+      };
+      response.cookies.set(
+        'x_user_data',
+        encodeURIComponent(JSON.stringify(minimalUser)),
+        cookieOptions
+      );
+
       // Set refresh token if available (for future implementation)
       // if (loginResult.refreshToken) {
       //   response.cookies.set('refresh_token', loginResult.refreshToken, getRefreshTokenCookieOptions());

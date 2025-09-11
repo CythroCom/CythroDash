@@ -9,7 +9,8 @@ import { SecurityLogAction, SecurityLogSeverity } from '@/database/tables/cythro
 export class IPBlockingController {
   static async blockIP(adminId: number, data: { ip_address: string; reason: string; expires_at?: string | null; block_type?: 'manual' | 'automatic' }) {
     const expires_at = data.expires_at ? new Date(data.expires_at) : null
-    const result = await blockedIPsOperations.blockIP({ ip_address: data.ip_address, reason: data.reason, blocked_by_admin_id: adminId, expires_at, block_type: data.block_type || 'manual', metadata: { source: data.block_type || 'manual' } })
+    const safeType = data.block_type === 'automatic' ? 'manual' : (data.block_type || 'manual')
+    const result = await blockedIPsOperations.blockIP({ ip_address: data.ip_address, reason: data.reason, blocked_by_admin_id: adminId, expires_at, block_type: safeType as any, metadata: { source: safeType } })
     try {
       await SecurityLogsController.createLog({
         user_id: adminId,

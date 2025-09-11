@@ -299,7 +299,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     // Check if daily login bonus is enabled
-    const config = getDailyLoginConfig();
+    const config = await getDailyLoginConfig();
     if (!config.enabled) {
       return NextResponse.json({
         success: false,

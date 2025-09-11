@@ -29,27 +29,33 @@ async function authenticateRequest(request: NextRequest): Promise<{ success: boo
       };
     }
 
-    // Get user information from request headers (sent by client)
+    // Get user information from request headers (preferred)
     const userDataHeader = request.headers.get('x-user-data');
     if (userDataHeader) {
       try {
         const userData = JSON.parse(decodeURIComponent(userDataHeader));
-
         if (userData && userData.id && userData.username && userData.email) {
-          return {
-            success: true,
-            user: userData
-          };
+          return { success: true, user: userData };
         }
       } catch (parseError) {
         console.log('User data header parsing failed:', parseError);
       }
     }
 
-    return {
-      success: false,
-      error: 'User identification required'
-    };
+    // Fallback: try x_user_data cookie set by the server during login/OAuth
+    const userDataCookie = request.cookies.get('x_user_data')?.value;
+    if (userDataCookie) {
+      try {
+        const userData = JSON.parse(decodeURIComponent(userDataCookie));
+        if (userData && userData.id && userData.username && userData.email) {
+          return { success: true, user: userData };
+        }
+      } catch (e) {
+        // ignore parse error
+      }
+    }
+
+    return { success: false, error: 'User identification required' };
   } catch (error) {
     console.error('Authentication error:', error);
     return {

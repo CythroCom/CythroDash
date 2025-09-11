@@ -10,72 +10,15 @@ import { useAuthStore } from "@/stores/user-store"
 import { useServerStore } from "@/stores/server-store"
 import { showSuccess } from "@/lib/toast"
 import type { Server as UiServer } from "@/components/ServerCard"
-
-// Legacy demo servers (no longer used)
-const demoServers: UiServer[] = [
-  {
-    id: 1,
-    name: "digberg",
-    status: "started",
-    game: "Minecraft",
-    players: { current: 0, max: 20 },
-    cpu: 101,
-    memory: { used: 319, total: 1024 },
-    uptime: "9s",
-    ip: "192.168.1.100:25565",
-  },
-  {
-    id: 2,
-    name: "vqyfn",
-    status: "suspended",
-    game: "Minecraft",
-    players: { current: 0, max: 20 },
-    cpu: 0,
-    memory: { used: 0, total: 1024 },
-    uptime: "0m",
-    ip: "192.168.1.101:25565",
-  },
-  {
-    id: 3,
-    name: "ttttttttg",
-    status: "starting",
-    game: "Minecraft",
-    players: { current: 0, max: 20 },
-    cpu: 100,
-    memory: { used: 255, total: 1024 },
-    uptime: "1s",
-    ip: "192.168.1.102:25565",
-  },
-  {
-    id: 4,
-    name: "sdsds",
-    status: "suspended",
-    game: "Minecraft",
-    players: { current: 0, max: 20 },
-    cpu: 0,
-    memory: { used: 0, total: 1024 },
-    uptime: "0m",
-    ip: "192.168.1.103:25565",
-  },
-  {
-    id: 5,
-    name: "pojjgy",
-    status: "suspended",
-    game: "Minecraft",
-    players: { current: 0, max: 20 },
-    cpu: 0,
-    memory: { used: 0, total: 1024 },
-    uptime: "0m",
-    ip: "192.168.1.104:25565",
-  },
-]
+import { useAppBootstrap } from "@/hooks/use-bootstrap"
+import LoadingOverlay from "@/components/LoadingOverlay"
 
 export default function Dashboard() {
   const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const { checkSession } = useAuthStore()
-  const { servers, isLoading, error, fetchServers } = useServerStore()
+  const { servers, isLoading, error, fetchServers, powerAction, fetchLiveStatus, startLivePolling, stopLivePolling, startUptimeTicker, stopUptimeTicker } = useServerStore()
 
   // Performance monitoring in development
   usePerformanceMonitor("Dashboard")
@@ -91,23 +34,16 @@ export default function Dashboard() {
   useEffect(() => {
     let cancelled = false
     const run = async () => {
-      // Fast path: if store already says authenticated, proceed
       const ok = await checkSession()
       if (!ok) {
-        if (!cancelled) {
-          router.replace('/login')
-        }
+        if (!cancelled) router.replace('/login')
         return
       }
       const success = await fetchServers()
-      if (!success) {
-        // show toast for error (read from store)
-        if (!cancelled && error) {
-          const e = error
-          // dynamic import to avoid SSR issues with sweetalert2
-          const { showError } = await import('@/lib/toast')
-          showError('Failed to load servers', e)
-        }
+      if (!success && !cancelled && error) {
+        const e = error
+        const { showError } = await import('@/lib/toast')
+        showError('Failed to load servers', e)
       }
     }
     run()
@@ -127,15 +63,28 @@ export default function Dashboard() {
     setSidebarOpen(true)
   }, [])
 
-  const handleServerStart = useCallback((serverId: number) => {
-    console.log("Starting server:", serverId)
-    showSuccess('Starting server')
-  }, [])
+  const handleServerStart = useCallback(async (serverId: number) => {
+    const ok = await powerAction({ id: String(serverId) }, 'start')
+    if (ok) {
+      showSuccess('Start signal sent')
+      // Try to refresh live status shortly after
+      setTimeout(() => { void fetchLiveStatus({ id: String(serverId) }) }, 500)
+    } else {
+      const { showError } = await import('@/lib/toast')
+      showError('Failed to start server')
+    }
+  }, [powerAction, fetchLiveStatus])
 
-  const handleServerRestart = useCallback((serverId: number) => {
-    console.log("Restarting server:", serverId)
-    // TODO: Implement server restart logic
-  }, [])
+  const handleServerRestart = useCallback(async (serverId: number) => {
+    const ok = await powerAction({ id: String(serverId) }, 'restart')
+    if (ok) {
+      showSuccess('Restart signal sent')
+      setTimeout(() => { void fetchLiveStatus({ id: String(serverId) }) }, 800)
+    } else {
+      const { showError } = await import('@/lib/toast')
+      showError('Failed to restart server')
+    }
+  }, [powerAction, fetchLiveStatus])
 
   const handleCopyIP = useCallback((ip: string) => {
     navigator.clipboard.writeText(ip)
@@ -163,6 +112,11 @@ export default function Dashboard() {
       name: sv.name,
       status: (sv.status === 'online' ? 'started' : sv.status) as UiServer['status'],
       game: sv.type || 'Game',
+      ip: (() => {
+        const allocs = sv.allocations || []
+        const primary = allocs.find(a => a.assigned) || allocs[0]
+        return primary ? `${primary.ip}:${primary.port}` : ''
+      })(),
       players: (() => {
         // Try to parse players from sv.players like "3/10"
         const parts = (sv.players || '0/0').split('/')
@@ -185,17 +139,15 @@ export default function Dashboard() {
         return { used: 0, total: 0 }
       })(),
       uptime: sv.uptime || '0s',
-      ip: (() => {
-        // derive from allocations or keep blank
-        const alloc = (sv.allocations && sv.allocations[0]) ? sv.allocations[0] : undefined
-        if (alloc) return `${alloc.alias || alloc.ip}:${alloc.port}`
-        return ''
-      })(),
     }))
   }, [])
 
+  const { isLoading: bootLoading } = useAppBootstrap()
+
   return (
     <div className="min-h-screen bg-neutral-900">
+      {bootLoading && <LoadingOverlay message="Preparing your dashboard..." />}
+
       <Sidebar
         isOpen={sidebarOpen}
         onToggle={handleSidebarToggle}

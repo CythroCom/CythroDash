@@ -168,13 +168,12 @@ if (typeof window !== 'undefined') {
 // Subscribe to user store changes to sync credits
 if (typeof window !== 'undefined') {
   import('@/stores/user-store').then(({ useAuthStore }) => {
-    useAuthStore.subscribe(
-      (state) => state.currentUser?.coins,
-      (coins) => {
-        if (typeof coins === 'number') {
-          useCreditsStore.getState().updateCredits(coins)
-        }
+    useAuthStore.subscribe((state, prev) => {
+      const coins: number | undefined = state.currentUser?.coins
+      const prevCoins: number | undefined = prev?.currentUser?.coins
+      if (typeof coins === 'number' && coins !== prevCoins) {
+        useCreditsStore.getState().updateCredits(coins)
       }
-    )
+    })
   })
 }

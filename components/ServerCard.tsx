@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import Icon from "@/components/IconProvider"
-import { useHoverAnimation, useIntersectionAnimation } from "@/hooks/useAnimations"
+import { useHoverAnimation } from "@/hooks/useAnimations"
+import { useServerStore } from "@/stores/server-store"
 
 export interface Server {
   id: string | number
   name: string
-  status: "online" | "starting" | "suspended" | "offline" | "started"
+  status: "online" | "starting" | "stopping" | "offline" | "suspended" | "started" | "unknown"
+  billing_status?: "active" | "overdue" | "suspended" | "cancelled" | "terminated"
   game: string
   players: { current: number; max: number }
   cpu: number
@@ -30,29 +32,44 @@ interface ServerCardProps {
 
 // Memoized status badge component
 const StatusBadge = memo(({ status }: { status: Server["status"] }) => {
-  const statusConfig = {
-    online: { className: "bg-green-500/10 text-green-400 border-green-500/20", label: "Online" },
+  const statusConfig: Record<string, { className: string; label: string }> = {
+    online:   { className: "bg-green-500/10 text-green-400 border-green-500/20", label: "Online" },
+    started:  { className: "bg-green-500/10 text-green-400 border-green-500/20", label: "Started" },
     starting: { className: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20", label: "Starting" },
-    suspended: { className: "bg-red-500/10 text-red-400 border-red-500/20", label: "Suspended" },
-    offline: { className: "bg-neutral-500/10 text-neutral-400 border-neutral-500/20", label: "Offline" },
-    started: { className: "bg-green-500/10 text-green-400 border-green-500/20", label: "Started" },
+    stopping: { className: "bg-orange-500/10 text-orange-400 border-orange-500/20", label: "Stopping" },
+    suspended:{ className: "bg-red-500/10 text-red-400 border-red-500/20", label: "Suspended" },
+    offline:  { className: "bg-neutral-500/10 text-neutral-400 border-neutral-500/20", label: "Offline" },
+    unknown:  { className: "bg-neutral-500/10 text-neutral-400 border-neutral-500/20", label: "Unknown" },
   }
-
-  const config = statusConfig[status] || { className: "bg-neutral-500/10 text-neutral-400 border-neutral-500/20", label: "Unknown" }
-  
+  const config = statusConfig[status] || statusConfig.unknown
   return <Badge className={config.className}>{config.label}</Badge>
 })
 StatusBadge.displayName = "StatusBadge"
 
+// Billing badge
+const BillingBadge = memo(({ status }: { status: NonNullable<Server["billing_status"]> }) => {
+  const cfg: Record<string, { className: string; label: string }> = {
+    active:     { className: "bg-blue-500/10 text-blue-300 border-blue-500/20", label: "Billing Active" },
+    overdue:    { className: "bg-amber-500/10 text-amber-300 border-amber-500/20", label: "Overdue" },
+    suspended:  { className: "bg-red-500/10 text-red-300 border-red-500/20", label: "Billing Suspended" },
+    cancelled:  { className: "bg-neutral-500/10 text-neutral-300 border-neutral-500/20", label: "Cancelled" },
+    terminated: { className: "bg-neutral-700/30 text-neutral-400 border-neutral-600/30", label: "Terminated" },
+  }
+  const c = cfg[status] || cfg.active
+  return <Badge className={c.className}>{c.label}</Badge>
+})
+BillingBadge.displayName = "BillingBadge"
+StatusBadge.displayName = "StatusBadge"
+
 // Memoized action button component
-const ActionButton = memo(({ server, onStart, onRestart }: { 
+const ActionButton = memo(({ server, onStart, onRestart }: {
   server: Server
-  onStart?: (serverId: number) => void
-  onRestart?: (serverId: number) => void
+  onStart?: (serverId: string | number) => void
+  onRestart?: (serverId: string | number) => void
 }) => {
   const handleClick = React.useCallback(() => {
     if (server.status === "suspended") return
-    if (server.status === "starting" || server.status === "started") {
+    if (server.status === "starting" || server.status === "started" || server.status === "online") {
       onRestart?.(server.id)
     } else {
       onStart?.(server.id)
@@ -73,7 +90,7 @@ const ActionButton = memo(({ server, onStart, onRestart }: {
 
   if (server.status === "starting") {
     return (
-      <Button 
+      <Button
         className="flex-1 gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 h-12 rounded-xl font-medium"
         onClick={handleClick}
       >
@@ -85,7 +102,7 @@ const ActionButton = memo(({ server, onStart, onRestart }: {
 
   if (server.status === "started") {
     return (
-      <Button 
+      <Button
         className="flex-1 gap-2 bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 h-12 rounded-xl font-medium"
         onClick={handleClick}
       >
@@ -96,7 +113,7 @@ const ActionButton = memo(({ server, onStart, onRestart }: {
   }
 
   return (
-    <Button 
+    <Button
       className="flex-1 gap-2 bg-neutral-600/10 hover:bg-neutral-600/20 text-neutral-300 border border-neutral-500/20 h-12 rounded-xl font-medium"
       onClick={handleClick}
     >
@@ -112,19 +129,36 @@ const ServerCard = memo(({ server, onStart, onRestart, onCopyIP, onOpenExternal 
   const cardRef = useRef<HTMLElement>(null)
 
   // Optimized animations
-  useHoverAnimation(cardRef, { scale: 1.02, translateY: -4, duration: 200 })
-  const { elementRef: intersectionRef } = useIntersectionAnimation({}, 'animate-fade-in')
+  useHoverAnimation(cardRef as any, { scale: 1.02, translateY: -4, duration: 200 })
 
-  // Memoize expensive calculations
-  const memoryPercentage = React.useMemo(() =>
-    (server.memory.used / server.memory.total) * 100,
-    [server.memory.used, server.memory.total]
-  )
+  // Live data selection
+  const liveServer = useServerStore(React.useCallback(s => s.servers.find(x => String(x.id) === String(server.id)), [server.id])) as any
 
-  const cpuPercentage = React.useMemo(() =>
-    Math.min(server.cpu, 100),
-    [server.cpu]
-  )
+  // Memoized derived metrics
+  const liveMem = liveServer?.resources?.memory
+  const memoryPercentage = React.useMemo(() => {
+    const used = typeof liveMem?.used === 'number' ? liveMem.used : server.memory.used
+    const total = typeof liveMem?.limit === 'number' ? liveMem.limit : server.memory.total
+    return Math.min(100, (used / Math.max(1, total)) * 100)
+  }, [liveMem?.used, liveMem?.limit, server.memory.used, server.memory.total])
+
+  const liveCpuUsed = liveServer?.resources?.cpu?.used
+  const cpuPercentage = React.useMemo(() => {
+    const v = typeof liveCpuUsed === 'number' ? liveCpuUsed : server.cpu
+    return Math.min(100, v)
+  }, [liveCpuUsed, server.cpu])
+
+  // Derive effective statuses (operational + billing)
+  const effectiveStatus: Server["status"] = React.useMemo(() => {
+    const s = (liveServer?.status as string) || server.status
+    return (s === 'online' ? 'started' : (s as any))
+  }, [liveServer?.status, server.status])
+
+  const effectiveBilling = React.useMemo(() => {
+    const b = (liveServer?.billing_status as string) || (server as any).billing_status
+    return (b as any) as NonNullable<Server["billing_status"]> | undefined
+  }, [liveServer?.billing_status, (server as any).billing_status])
+
 
   // Memoized event handlers
   const handleCopyIP = React.useCallback(() => {
@@ -145,15 +179,11 @@ const ServerCard = memo(({ server, onStart, onRestart, onCopyIP, onOpenExternal 
       className="border border-neutral-700/30 bg-neutral-800/40 hover:bg-neutral-800/60 transition-colors-fast shadow-soft hover:shadow-strong rounded-2xl overflow-hidden card-optimized"
     >
       <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-neutral-700/50 rounded-xl flex items-center justify-center border border-neutral-600/30 shadow-lg">
-              <Icon name="Database" className="h-6 w-6 text-neutral-300" />
-            </div>
-            <div>
-              <CardTitle className="text-xl text-white font-bold">{server.name}</CardTitle>
-              <p className="text-sm text-neutral-400 font-medium">{server.game}</p>
-            </div>
+        {/* Prominent status row at the very top */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <StatusBadge status={effectiveStatus} />
+            {effectiveBilling && <BillingBadge status={effectiveBilling} />}
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -174,8 +204,14 @@ const ServerCard = memo(({ server, onStart, onRestart, onCopyIP, onOpenExternal 
             </Button>
           </div>
         </div>
-        <div className="mt-4">
-          <StatusBadge status={server.status} />
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-neutral-700/50 rounded-xl flex items-center justify-center border border-neutral-600/30 shadow-lg">
+            <Icon name="Database" className="h-6 w-6 text-neutral-300" />
+          </div>
+          <div>
+            <CardTitle className="text-xl text-white font-bold">{server.name}</CardTitle>
+            <p className="text-sm text-neutral-400 font-medium">{server.game}</p>
+          </div>
         </div>
       </CardHeader>
 
@@ -196,7 +232,7 @@ const ServerCard = memo(({ server, onStart, onRestart, onCopyIP, onOpenExternal 
                 <Icon name="Clock" className="h-4 w-4" />
                 Uptime
               </div>
-              <span className="font-bold text-white">{server.uptime}</span>
+              <span className="font-bold text-white">{(liveServer?.uptime ?? server.uptime)}</span>
             </div>
             <Progress
               value={cpuPercentage}
@@ -212,7 +248,7 @@ const ServerCard = memo(({ server, onStart, onRestart, onCopyIP, onOpenExternal 
                 <Icon name="Cpu" className="h-4 w-4" />
                 CPU Usage
               </div>
-              <span className="font-bold text-white">{server.cpu}%</span>
+              <span className="font-bold text-white">{Math.round(cpuPercentage)}%</span>
             </div>
             <Progress
               value={cpuPercentage}
@@ -227,7 +263,7 @@ const ServerCard = memo(({ server, onStart, onRestart, onCopyIP, onOpenExternal 
                 Memory Usage
               </div>
               <span className="font-bold text-white">
-                {server.memory.used}MB/{server.memory.total}MB
+                {(liveMem?.used ?? server.memory.used)}MB/{(liveMem?.limit ?? server.memory.total)}MB
               </span>
             </div>
             <Progress

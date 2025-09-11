@@ -193,36 +193,47 @@ class ServerSoftwareOperations {
       stability?: SoftwareStability;
       featured?: boolean;
       recommended?: boolean;
-      locationId?: string;
-      planId?: string;
+      locationId?: string; // reserved for future
+      planId?: string;     // reserved for future
       userId?: number;
       userRole?: number;
       isVerified?: boolean;
     }
   ): Promise<SoftwareSummary[]> {
-    let serverSoftware: CythroDashServerSoftware[];
+    // Start from active/beta list then filter deterministically in code
+    let software: CythroDashServerSoftware[] = await this.getActiveServerSoftware();
 
+    // Basic property filters
+    if (filters?.serverTypeId) {
+      software = software.filter(s => s.server_type_id === filters.serverTypeId);
+    }
+    if (filters?.stability) {
+      software = software.filter(s => s.stability === filters.stability);
+    }
+    if (filters?.featured !== undefined) {
+      software = software.filter(s => !!(s as any).featured === !!filters.featured);
+    }
+    if (filters?.recommended !== undefined) {
+      software = software.filter(s => !!s.recommended === !!filters.recommended);
+    }
+
+    // Optional user-based access restrictions (if present on documents)
     if (filters?.userId !== undefined && filters?.userRole !== undefined && filters?.isVerified !== undefined) {
-      serverSoftware = await this.getServerSoftwareForUser(filters.userId, filters.userRole, filters.isVerified);
-    } else if (filters?.serverTypeId) {
-      serverSoftware = await this.getServerSoftwareByType(filters.serverTypeId);
-    } else if (filters?.stability) {
-      serverSoftware = await this.getServerSoftwareBySoftwareStability(filters.stability);
-    } else if (filters?.featured) {
-      serverSoftware = await this.getFeaturedServerSoftware();
-    } else if (filters?.recommended) {
-      serverSoftware = await this.getRecommendedServerSoftware();
-    } else {
-      serverSoftware = await this.getActiveServerSoftware();
+      software = software.filter((s: any) => {
+        const ar = s.access_restrictions;
+        if (!ar) return true;
+        if (typeof ar.min_user_role === 'number' && filters.userRole! > ar.min_user_role) return false;
+        if (ar.requires_verification === true && !filters.isVerified) return false;
+        if (Array.isArray(ar.whitelist_users) && ar.whitelist_users.length > 0) {
+          if (!ar.whitelist_users.includes(filters.userId)) return false;
+        }
+        return true;
+      });
     }
 
-    // Apply additional filters
-    if (filters?.serverTypeId && filters?.userId) {
-      serverSoftware = serverSoftware.filter(ss => ss.server_type_id === filters.serverTypeId);
-    }
-
-    // Convert to summaries and sort
-    return ServerSoftwareHelpers.sortSoftware(serverSoftware).map((ss: CythroDashServerSoftware) => ServerSoftwareHelpers.getSummary(ss));
+    return ServerSoftwareHelpers
+      .sortSoftware(software)
+      .map((ss: CythroDashServerSoftware) => ServerSoftwareHelpers.getSummary(ss));
   }
 
   // Get server software statistics

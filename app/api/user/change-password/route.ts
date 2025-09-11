@@ -54,10 +54,8 @@ export async function POST(request: NextRequest) {
     console.log('Password change data validated for user:', passwordData.user_id);
 
     // Get IP address and user agent from request
-    const ipAddress = request.headers.get('x-forwarded-for') ||
-                     request.headers.get('x-real-ip') ||
-                     request.ip ||
-                     'unknown';
+    const ipHeader = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || ''
+    const ipAddress = ipHeader.split(',')[0]?.trim() || 'unknown';
     const userAgent = request.headers.get('user-agent') || 'unknown';
 
     // Prepare password change request for controller

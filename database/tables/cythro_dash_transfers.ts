@@ -1,6 +1,6 @@
 /**
  * CythroDash - Transfers Database Schema
- * 
+ *
  * Handles coin transfers between users
  */
 
@@ -18,11 +18,11 @@ export interface CythroDashTransfer {
   created_at: Date;
   updated_at: Date;
   completed_at?: Date;
-  
+
   // Metadata
   ip_address?: string;
   user_agent?: string;
-  
+
   // Validation
   from_balance_before: number;
   from_balance_after: number;
@@ -31,6 +31,16 @@ export interface CythroDashTransfer {
 }
 
 export const transfersCollectionName = 'cythro_dash_transfers';
+
+// Suggested indexes for performance (created_at sorting, status filtering, and by-user lookups)
+export const TRANSFERS_INDEXES: Array<{ key: Record<string, 1 | -1>; name: string; unique?: boolean }> = [
+  { key: { id: 1 }, name: 'id_unique', unique: true },
+  { key: { created_at: -1 }, name: 'created_at_desc' },
+  { key: { status: 1, created_at: -1 }, name: 'status_created_at' },
+  { key: { from_user_id: 1, created_at: -1 }, name: 'from_user_created_at' },
+  { key: { to_user_id: 1, created_at: -1 }, name: 'to_user_created_at' },
+];
+
 
 // Default transfer values
 export const defaultTransferValues: Partial<CythroDashTransfer> = {
@@ -68,8 +78,8 @@ export const transferHelpers = {
 
   // Validate transfer amount
   isValidAmount: (amount: number): boolean => {
-    return amount >= transferValidation.minAmount && 
-           amount <= transferValidation.maxAmount && 
+    return amount >= transferValidation.minAmount &&
+           amount <= transferValidation.maxAmount &&
            Number.isInteger(amount);
   },
 

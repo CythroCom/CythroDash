@@ -11,6 +11,7 @@ import { planOperations } from '@/hooks/managers/database/plan';
 import { locationOperations } from '@/hooks/managers/database/location';
 import { PlanStatus, BillingCycle } from '@/database/tables/cythro_dash_plans';
 import { z } from 'zod';
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache';
 
 // Input validation schema for GET request
 const getServerPlansSchema = z.object({
@@ -195,7 +196,7 @@ export async function GET(request: NextRequest) {
     // Parse and validate query parameters
     const url = new URL(request.url);
     const queryParams = Object.fromEntries(url.searchParams.entries());
-    
+
     const validation = getServerPlansSchema.safeParse(queryParams);
     if (!validation.success) {
       return NextResponse.json({
@@ -207,6 +208,22 @@ export async function GET(request: NextRequest) {
 
     const filters = validation.data;
     const user = authResult.user;
+
+    // Cache lookup (per-user + filters)
+    const t0 = Date.now();
+    const bypass = shouldBypassCache(request.url);
+    const cacheKey = makeKey(['plans', user.id, filters.location_id, filters.server_type_id || '', filters.billing_cycle || '', filters.min_price ?? '', filters.max_price ?? '', filters.featured ?? '', filters.popular ?? '', filters.include_stats ?? false, filters.sort_by, filters.sort_order]);
+    if (!bypass) {
+      const cached = getCache<any>(cacheKey);
+      const ifNoneMatch = request.headers.get('if-none-match') || '';
+      if (cached.hit && cached.value) {
+        const etag = cached.etag || makeETagFromObject(cached.value);
+        if (etag && ifNoneMatch && ifNoneMatch === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+        }
+        return NextResponse.json(cached.value, { status: 200, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+      }
+    }
 
     // Validate that the location exists and is available
     const location = await locationOperations.getLocationById(filters.location_id);
@@ -355,7 +372,7 @@ export async function GET(request: NextRequest) {
       'X-RateLimit-Reset': Math.ceil(rateLimitResult.resetTime / 1000).toString()
     };
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       message: 'Server plans retrieved successfully',
       location: {
@@ -372,9 +389,14 @@ export async function GET(request: NextRequest) {
         requires_verification: !user.verified,
         current_balance: user.coins || 0
       }
-    }, { 
+    };
+
+    const etag = makeETagFromObject(payload);
+    if (!bypass) setCache(cacheKey, payload, 60_000, { ...responseHeaders, ETag: etag }, etag);
+
+    return NextResponse.json(payload, {
       status: 200,
-      headers: responseHeaders
+      headers: { ...responseHeaders, ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` }
     });
 
   } catch (error) {

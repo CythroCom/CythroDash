@@ -73,6 +73,8 @@ export interface CreateServerTypeData {
   display_config?: {
     icon?: string
     color?: string
+    banner_image?: string
+    thumbnail?: string
   }
   access_restrictions?: {
     min_user_role?: number
@@ -98,8 +100,8 @@ export interface UpdateServerTypeData extends Partial<CreateServerTypeData> {
 interface AdminServerTypesStore {
   // State
   serverTypesList: CythroDashServerType[]
-  serverTypesListPagination: ServerTypesListResponse['data']['pagination'] | null
-  serverTypesListStats: ServerTypesListResponse['data']['stats'] | null
+  serverTypesListPagination: NonNullable<ServerTypesListResponse['data']>['pagination'] | null
+  serverTypesListStats: NonNullable<ServerTypesListResponse['data']>['stats'] | null
   isLoadingServerTypesList: boolean
   
   currentServerType: CythroDashServerType | null

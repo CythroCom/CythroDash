@@ -150,6 +150,8 @@ type ServerManagementStore = {
     locations: Date | null
     plans: Date | null
     software: Date | null
+    softwareTypeId?: string | null
+    plansKey?: string | null
   }
   
   // Actions
@@ -199,7 +201,9 @@ export const useServerManagementStore = create<ServerManagementStore>()(
         serverTypes: null,
         locations: null,
         plans: null,
-        software: null
+        software: null,
+        softwareTypeId: null,
+        plansKey: null
       },
       
       // Check if cache is valid
@@ -224,6 +228,7 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           // Get current user for authentication header
           const { useAuthStore } = await import('@/stores/user-store')
           const currentUser = useAuthStore.getState().currentUser
+          const sessionToken = useAuthStore.getState().sessionToken
 
           if (!currentUser) {
             set({ error: 'User not authenticated' })
@@ -239,13 +244,15 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           const headers: HeadersInit = {
             'Content-Type': 'application/json',
           }
+          if (sessionToken) (headers as any)['Authorization'] = `Bearer ${sessionToken}`
 
           // Add user data header for authentication
           headers['x-user-data'] = encodeURIComponent(JSON.stringify({
             id: currentUser.id,
             username: currentUser.username,
             email: currentUser.email,
-            role: currentUser.role
+            role: currentUser.role,
+            verified: currentUser.verified
           }))
 
           const response = await fetch(`/api/servers/types?${params}`, {
@@ -279,13 +286,19 @@ export const useServerManagementStore = create<ServerManagementStore>()(
       // Fetch server software
       fetchServerSoftware: async (serverTypeId: string) => {
         const state = get()
-        
+
+        // Cache check: same server type and recent data
+        if (state.selectedServerType === serverTypeId && state.serverSoftware.length > 0 && (state as any).isCacheValid('software') && state.lastFetch.softwareTypeId === serverTypeId) {
+          return true
+        }
+
         set({ isLoading: true, error: null })
-        
+
         try {
           // Get current user for authentication header
           const { useAuthStore } = await import('@/stores/user-store')
           const currentUser = useAuthStore.getState().currentUser
+          const sessionToken = useAuthStore.getState().sessionToken
 
           if (!currentUser) {
             set({ error: 'User not authenticated' })
@@ -300,13 +313,15 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           const headers: HeadersInit = {
             'Content-Type': 'application/json',
           }
+          if (sessionToken) (headers as any)['Authorization'] = `Bearer ${sessionToken}`
 
           // Add user data header for authentication
           headers['x-user-data'] = encodeURIComponent(JSON.stringify({
             id: currentUser.id,
             username: currentUser.username,
             email: currentUser.email,
-            role: currentUser.role
+            role: currentUser.role,
+            verified: currentUser.verified
           }))
 
           const response = await fetch(`/api/servers/software?${params}`, {
@@ -320,7 +335,7 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           if (result.success) {
             set({
               serverSoftware: result.server_software || [],
-              lastFetch: { ...state.lastFetch, software: new Date() }
+              lastFetch: { ...state.lastFetch, software: new Date(), softwareTypeId: serverTypeId }
             })
             return true
           } else {
@@ -351,6 +366,7 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           // Get current user for authentication header
           const { useAuthStore } = await import('@/stores/user-store')
           const currentUser = useAuthStore.getState().currentUser
+          const sessionToken = useAuthStore.getState().sessionToken
 
           if (!currentUser) {
             set({ error: 'User not authenticated' })
@@ -366,13 +382,15 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           const headers: HeadersInit = {
             'Content-Type': 'application/json',
           }
+          if (sessionToken) (headers as any)['Authorization'] = `Bearer ${sessionToken}`
 
           // Add user data header for authentication
           headers['x-user-data'] = encodeURIComponent(JSON.stringify({
             id: currentUser.id,
             username: currentUser.username,
             email: currentUser.email,
-            role: currentUser.role
+            role: currentUser.role,
+            verified: currentUser.verified
           }))
 
           const response = await fetch(`/api/servers/locations?${params}`, {
@@ -405,12 +423,20 @@ export const useServerManagementStore = create<ServerManagementStore>()(
       
       // Fetch plans
       fetchPlans: async (locationId: string, filters = {}) => {
+        const state = get()
+        const plansKey = `${locationId}:${filters.server_type_id || ''}:${filters.billing_cycle || ''}`
+        // Cache check: same query and recent data
+        if (state.plans.length > 0 && (state as any).isCacheValid('plans') && state.lastFetch.plansKey === plansKey) {
+          return true
+        }
+
         set({ isLoading: true, error: null })
-        
+
         try {
           // Get current user for authentication header
           const { useAuthStore } = await import('@/stores/user-store')
           const currentUser = useAuthStore.getState().currentUser
+          const sessionToken = useAuthStore.getState().sessionToken
 
           if (!currentUser) {
             set({ error: 'User not authenticated' })
@@ -428,13 +454,15 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           const headers: HeadersInit = {
             'Content-Type': 'application/json',
           }
+          if (sessionToken) (headers as any)['Authorization'] = `Bearer ${sessionToken}`
 
           // Add user data header for authentication
           headers['x-user-data'] = encodeURIComponent(JSON.stringify({
             id: currentUser.id,
             username: currentUser.username,
             email: currentUser.email,
-            role: currentUser.role
+            role: currentUser.role,
+            verified: currentUser.verified
           }))
 
           const response = await fetch(`/api/servers/plans?${params}`, {
@@ -450,7 +478,7 @@ export const useServerManagementStore = create<ServerManagementStore>()(
             set({
               plans: result.plans || [],
               userPermissions: result.user_permissions || null,
-              lastFetch: { ...state.lastFetch, plans: new Date() }
+              lastFetch: { ...state.lastFetch, plans: new Date(), plansKey }
             })
             return true
           } else {
@@ -472,6 +500,7 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           // Get current user for authentication header
           const { useAuthStore } = await import('@/stores/user-store')
           const currentUser = useAuthStore.getState().currentUser
+          const sessionToken = useAuthStore.getState().sessionToken
 
           if (!currentUser) {
             set({ error: 'User not authenticated' })
@@ -489,13 +518,15 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           const headers: HeadersInit = {
             'Content-Type': 'application/json',
           }
+          if (sessionToken) (headers as any)['Authorization'] = `Bearer ${sessionToken}`
 
           // Add user data header for authentication
           headers['x-user-data'] = encodeURIComponent(JSON.stringify({
             id: currentUser.id,
             username: currentUser.username,
             email: currentUser.email,
-            role: currentUser.role
+            role: currentUser.role,
+            verified: currentUser.verified
           }))
 
           const response = await fetch(`/api/servers/capacity?${params}`, {
@@ -528,6 +559,7 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           // Get current user for authentication header
           const { useAuthStore } = await import('@/stores/user-store')
           const currentUser = useAuthStore.getState().currentUser
+          const sessionToken = useAuthStore.getState().sessionToken
 
           if (!currentUser) {
             set({ error: 'User not authenticated' })
@@ -540,13 +572,15 @@ export const useServerManagementStore = create<ServerManagementStore>()(
           const headers: HeadersInit = {
             'Content-Type': 'application/json',
           }
+          if (sessionToken) (headers as any)['Authorization'] = `Bearer ${sessionToken}`
 
           // Add user data header for authentication
           headers['x-user-data'] = encodeURIComponent(JSON.stringify({
             id: currentUser.id,
             username: currentUser.username,
             email: currentUser.email,
-            role: currentUser.role
+            role: currentUser.role,
+            verified: currentUser.verified
           }))
 
           const response = await fetch('/api/servers/create', {
@@ -598,10 +632,16 @@ export const useServerManagementStore = create<ServerManagementStore>()(
 
       // UI actions
       setSelectedServerType: (typeId: string | null) => {
+        const prev = get().selectedServerType
         set({ selectedServerType: typeId })
         // Clear dependent data when server type changes
-        if (typeId !== get().selectedServerType) {
-          set({ serverSoftware: [], plans: [] })
+        if (typeId !== prev) {
+          const lf = get().lastFetch
+          set({
+            serverSoftware: [],
+            plans: [],
+            lastFetch: { ...lf, software: null, softwareTypeId: null, plans: null, plansKey: null }
+          })
         }
       },
 

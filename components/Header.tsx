@@ -74,8 +74,8 @@ UserProfile.displayName = "UserProfile"
 
 // Main Header component with optimizations
 const Header = memo(({ 
-  title = "Servers",
-  subtitle = "Create and manage game servers",
+  title = "",
+  subtitle = "",
   searchQuery = "",
   onSearchChange,
   onMenuClick,

@@ -120,8 +120,8 @@ export interface UpdateServerSoftwareData extends Partial<CreateServerSoftwareDa
 interface AdminServerSoftwareStore {
   // State
   serverSoftwareList: CythroDashServerSoftware[]
-  serverSoftwareListPagination: ServerSoftwareListResponse['data']['pagination'] | null
-  serverSoftwareListStats: ServerSoftwareListResponse['data']['stats'] | null
+  serverSoftwareListPagination: NonNullable<ServerSoftwareListResponse['data']>['pagination'] | null
+  serverSoftwareListStats: NonNullable<ServerSoftwareListResponse['data']>['stats'] | null
   isLoadingServerSoftwareList: boolean
   
   currentServerSoftware: CythroDashServerSoftware | null

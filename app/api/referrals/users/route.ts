@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ReferralsController } from '@/hooks/managers/controller/User/Referrals';
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache';
 
 // Simple authentication function for referrals API
 async function authenticateRequest(request: NextRequest): Promise<{ success: boolean; user?: any; error?: string }> {
@@ -93,15 +94,30 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100); // Max 100 users per request
     const offset = parseInt(url.searchParams.get('offset') || '0');
 
+    // Cache lookup per-user and pagination
+    const t0 = Date.now();
+    const bypass = shouldBypassCache(request.url);
+    const cacheKey = makeKey(['referral_users', userId, limit, offset]);
+    if (!bypass) {
+      const cached = getCache<any>(cacheKey);
+      const ifNoneMatch = request.headers.get('if-none-match') || '';
+      if (cached.hit && cached.value) {
+        const etag = cached.etag || makeETagFromObject(cached.value);
+        if (etag && ifNoneMatch && ifNoneMatch === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+        }
+        return NextResponse.json(cached.value, { status: 200, headers: { ETag: cached.etag || makeETagFromObject(cached.value), 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+      }
+    }
+
     // Get referred users
     const result = await ReferralsController.getReferredUsers(userId, limit, offset);
 
     if (result.success) {
-      return NextResponse.json({
-        success: true,
-        message: result.message,
-        data: result.data
-      });
+      const payload = { success: true, message: result.message, data: result.data };
+      const etag = makeETagFromObject(payload);
+      if (!bypass) setCache(cacheKey, payload, 20_000, { ETag: etag }, etag);
+      return NextResponse.json(payload, { status: 200, headers: { ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` } });
     } else {
       return NextResponse.json(
         {

@@ -28,72 +28,71 @@ export async function authMiddleware(request: NextRequest): Promise<{
     const sessionToken = authHeader?.replace('Bearer ', '') ||
                         request.cookies.get('session_token')?.value;
 
-    if (!sessionToken) {
+    // Require at least some auth context: session token OR x_user_data
+    const hasUserHeader = !!request.headers.get('x-user-data')
+    const hasUserCookie = !!request.cookies.get('x_user_data')?.value
+    if (!sessionToken && !hasUserHeader && !hasUserCookie) {
       return {
         success: false,
-        error: 'No authentication token provided',
+        error: 'No authentication context provided',
         response: NextResponse.json(
-          { success: false, message: 'Authentication required', error: 'NO_TOKEN' },
+          { success: false, message: 'Authentication required', error: 'NO_AUTH_CONTEXT' },
           { status: 401 }
         )
       };
     }
 
-    // Validate session token format (should be hex string)
-    const hexTokenRegex = /^[a-f0-9]{64}$/i; // 32 bytes = 64 hex characters
-    if (!hexTokenRegex.test(sessionToken)) {
-      return {
-        success: false,
-        error: 'Invalid session token format',
-        response: NextResponse.json(
-          { success: false, message: 'Invalid session token format', error: 'INVALID_TOKEN_FORMAT' },
-          { status: 401 }
-        )
-      };
-    }
+    // Note: Do not strictly validate session token format here.
+    // Some environments may use non-hex tokens (JWT or other). We rely on user context cookie/header for now.
 
     // Get user information from request headers (sent by client)
     const userDataHeader = request.headers.get('x-user-data');
     if (userDataHeader) {
       try {
         const userData = JSON.parse(decodeURIComponent(userDataHeader));
-
         if (userData && userData.id && userData.username && userData.email) {
-          return {
-            success: true,
-            user: userData
-          };
+          return { success: true, user: userData };
         }
       } catch (parseError) {
         console.log('User data header parsing failed:', parseError);
       }
     }
 
-    // Fallback: Try to parse session token as JSON (for backward compatibility)
-    try {
-      const userData = JSON.parse(decodeURIComponent(sessionToken));
-
-      if (userData && userData.id) {
-        return {
-          success: true,
-          user: userData
-        };
+    // Fallback: try x_user_data cookie (set at login)
+    const userDataCookie = request.cookies.get('x_user_data')?.value;
+    if (userDataCookie) {
+      try {
+        const userData = JSON.parse(decodeURIComponent(userDataCookie));
+        if (userData && userData.id && userData.username && userData.email) {
+          return { success: true, user: userData };
+        }
+      } catch (e) {
+        // ignore
       }
-    } catch (parseError) {
-      // Session token is hex format, which is expected
     }
 
-    // For now, since we don't have a session store, we'll return an error
-    // In a production system, you would validate the session token against a database
+    // Fallback: Try to parse session token as JSON (legacy compatibility)
+    if (sessionToken) {
+      try {
+        const userData = JSON.parse(decodeURIComponent(sessionToken));
+        if (userData && userData.id) {
+          return { success: true, user: userData };
+        }
+      } catch (parseError) {
+        // ignore; not JSON-encoded
+      }
+    }
+
+    // No user available; require header or cookie until session store is implemented
     return {
       success: false,
-      error: 'Session validation not implemented - user data required in headers',
+      error: 'Session validation not implemented - user data required',
       response: NextResponse.json(
         {
           success: false,
-          message: 'Authentication failed - session validation not implemented',
+          message: 'Authentication failed - user context missing',
           error: 'SESSION_VALIDATION_NOT_IMPLEMENTED',
-          hint: 'Include user data in x-user-data header or implement proper session storage'
+          hint: 'Include x-user-data header or ensure x_user_data cookie is set at login'
         },
         { status: 401 }
       )

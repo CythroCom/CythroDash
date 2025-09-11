@@ -20,8 +20,7 @@ import {
   panelServerStart,
   panelServerStop,
   panelServerRestart,
-  panelServerKill,
-  PterodactylServer
+  panelServerKill
 } from '../../pterodactyl/servers';
 import { parseBillingCycle } from '@/lib/billing-cycle';
 import {
@@ -29,8 +28,7 @@ import {
   ServerStatus,
   BillingStatus,
   PowerState,
-  ServerHelpers,
-  ServerSummary
+  ServerHelpers
 } from '../../../../database/tables/cythro_dash_servers';
 
 // Server creation request interface
@@ -462,7 +460,9 @@ export const ServersController = {
         pterodactyl_identifier: dbServer.pterodactyl_identifier,
         name: dbServer.name,
         description: dbServer.description,
-        status: dbServer.status.toLowerCase() as any, // Convert to frontend status format
+        status: String(dbServer.status || '').toLowerCase() as any, // operational status
+        power_state: String(dbServer.power_state || '').toLowerCase() as any,
+        billing_status: String(dbServer.billing_status || '').toLowerCase() as any,
 
         // Resource information (placeholder for now)
         resources: {
@@ -576,8 +576,9 @@ export const ServersController = {
         return { success: false, message: 'Server cannot be started in current state' };
       }
 
-      // Start server in Pterodactyl
-      await panelServerStart(server.pterodactyl_server_id);
+      // Start server in Pterodactyl (client API requires identifier/uuid)
+      const startIdentifier = server.pterodactyl_identifier || server.pterodactyl_uuid || String(server.pterodactyl_server_id)
+      await panelServerStart(startIdentifier);
 
       // Update database
       await serverOperations.updateServer(serverId, {
@@ -614,8 +615,9 @@ export const ServersController = {
         return { success: false, message: 'Server cannot be stopped in current state' };
       }
 
-      // Stop server in Pterodactyl
-      await panelServerStop(server.pterodactyl_server_id);
+      // Stop server in Pterodactyl (client API requires identifier/uuid)
+      const stopIdentifier = server.pterodactyl_identifier || server.pterodactyl_uuid || String(server.pterodactyl_server_id)
+      await panelServerStop(stopIdentifier);
 
       // Update database
       await serverOperations.updateServer(serverId, {
@@ -648,8 +650,9 @@ export const ServersController = {
         return { success: false, message: 'Server not linked to game panel' };
       }
 
-      // Restart server in Pterodactyl
-      await panelServerRestart(server.pterodactyl_server_id);
+      // Restart server in Pterodactyl (client API requires identifier/uuid)
+      const restartIdentifier = server.pterodactyl_identifier || server.pterodactyl_uuid || String(server.pterodactyl_server_id)
+      await panelServerRestart(restartIdentifier);
 
       // Update database
       await serverOperations.updateServer(serverId, {
@@ -740,6 +743,119 @@ export const ServersController = {
     } catch (error) {
       console.error('Error updating server settings:', error);
       return { success: false, message: 'Failed to update server settings' };
+    }
+  },
+
+  /**
+   * Update server settings (Pterodactyl only)
+   * Syncs name, description, startup command, environment variables, and resource limits.
+   */
+  async updateServerSettingsPterodactyl(userId: number, serverId: string, updateData: UpdateServerData): Promise<ServerManagementResponse> {
+    try {
+      // Fetch server and validate ownership
+      const server = await serverOperations.getServerById(serverId)
+      if (!server) return { success: false, message: 'Server not found' }
+      if (server.user_id !== userId) return { success: false, message: 'Access denied' }
+
+      // Ensure Pterodactyl linkage (application API uses numeric server id)
+      const appServerId: number | undefined = server.pterodactyl_server_id as any
+      if (!appServerId) {
+        return { success: false, message: 'Server not linked to Pterodactyl' }
+      }
+
+      // Prepare payloads for application API endpoints
+      const details: any = {}
+      const build: any = {}
+      const feature_limits: any = {}
+      let needsStartup = false
+      const startup: any = {}
+
+      // Always include user ID for details updates (required by Pterodactyl API)
+      if (typeof updateData.name === 'string' || typeof updateData.description === 'string') {
+        details.user = server.user_id
+      }
+      if (typeof updateData.name === 'string') details.name = updateData.name
+      if (typeof updateData.description === 'string') details.description = updateData.description
+
+      const limitsAny: any = (updateData as any).limits
+      if (limitsAny) {
+        if (typeof limitsAny.memory === 'number') build.memory = limitsAny.memory
+        if (typeof limitsAny.swap === 'number') build.swap = limitsAny.swap
+        if (typeof limitsAny.disk === 'number') build.disk = limitsAny.disk
+        if (typeof limitsAny.io === 'number') build.io = limitsAny.io
+        if (typeof limitsAny.cpu === 'number') build.cpu = limitsAny.cpu
+        if (typeof limitsAny.databases === 'number') feature_limits.databases = limitsAny.databases
+        if (typeof limitsAny.allocations === 'number') feature_limits.allocations = limitsAny.allocations
+        if (typeof limitsAny.backups === 'number') feature_limits.backups = limitsAny.backups
+        if (Object.keys(feature_limits).length) build.feature_limits = feature_limits
+      }
+
+      const configAny: any = (updateData as any).configuration
+      if (configAny) {
+        if (typeof configAny.startup_command === 'string') {
+          startup.startup = configAny.startup_command
+          needsStartup = true
+        }
+        if (configAny.environment_variables) {
+          startup.environment = Object.fromEntries(
+            Object.entries(configAny.environment_variables).map(([k,v]) => [k, String(v)])
+          )
+          needsStartup = true
+        }
+      }
+
+      // If startup update needed, ensure egg id by fetching server details
+      if (needsStartup) {
+        const { panelServerGetDetails } = await import('../../pterodactyl/servers')
+        const detailsRes = await panelServerGetDetails(appServerId)
+        const eggId = detailsRes.attributes?.egg
+        if (eggId) startup.egg = eggId
+      }
+
+      // Execute updates sequentially, collecting results
+      const results: any = { details: null, build: null, startup: null }
+
+      const { panelServerUpdateDetails, panelServerUpdateBuild, panelServerUpdateStartup } = await import('../../pterodactyl/servers')
+
+      if (Object.keys(details).length) {
+        results.details = await panelServerUpdateDetails(appServerId, details)
+      }
+      if (Object.keys(build).length) {
+        // Allocation is required by API; if we don't have it, skip build update gracefully
+        // Try to fetch current allocation if missing
+        if (build.allocation === undefined) {
+          try {
+            const { panelServerGetDetails } = await import('../../pterodactyl/servers')
+            const d = await panelServerGetDetails(appServerId)
+            const alloc = d.attributes?.allocation
+            if (alloc) build.allocation = alloc
+          } catch {}
+        }
+        if (build.allocation !== undefined) {
+          results.build = await panelServerUpdateBuild(appServerId, build)
+        }
+      }
+      if (needsStartup) {
+        if (startup.egg !== undefined) {
+          results.startup = await panelServerUpdateStartup(appServerId, startup)
+        }
+      }
+
+      const anyUpdate = Boolean(results.details || results.build || results.startup)
+      if (!anyUpdate) {
+        return { success: true, message: 'No Pterodactyl-syncable fields to update' }
+      }
+
+      return {
+        success: true,
+        message: 'Pterodactyl settings synchronized',
+        server: await serverOperations.getServerById(serverId) || server,
+        pterodactyl_data: results
+      }
+    } catch (error: any) {
+      console.error('Error syncing Pterodactyl settings:', error)
+      const message = error?.message || 'Failed to synchronize with Pterodactyl'
+      return { success: false, message }
     }
   }
 };

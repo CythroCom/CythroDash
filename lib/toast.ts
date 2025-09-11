@@ -39,3 +39,21 @@ export const showInfo = (title: string, text?: string) => {
 export const showWarning = (title: string, text?: string) => {
   toast.fire({ icon: 'warning', title, text })
 }
+
+export const showConfirm = async (title: string, text?: string): Promise<boolean> => {
+  const res = await Swal.fire({
+    title,
+    text,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Confirm',
+    cancelButtonText: 'Cancel',
+    background: '#111827',
+    color: '#E5E7EB',
+    customClass: {
+      popup: 'swal2-neutral-popup border border-neutral-700 rounded-xl shadow-xl',
+      title: 'swal2-neutral-title text-white font-medium',
+    }
+  })
+  return !!res.isConfirmed
+}

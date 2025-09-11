@@ -10,6 +10,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { UserDetailsController } from '@/hooks/managers/controller/User/Details';
 
+import { userOperations } from '@/hooks/managers/database/user'
+
 // Input validation schema
 const claimRewardSchema = z.object({
   action: z.literal('claim')
@@ -79,7 +81,7 @@ function checkRateLimit(userId: number): boolean {
   const maxRequests = 3; // Max 3 attempts per hour
 
   const current = rateLimitMap.get(key);
-  
+
   if (!current || now > current.resetTime) {
     rateLimitMap.set(key, { count: 1, resetTime: now + windowMs });
     return true;
@@ -96,62 +98,23 @@ function checkRateLimit(userId: number): boolean {
 // Check if user has GitHub connected (simplified check)
 async function checkGitHubConnection(user: any): Promise<boolean> {
   try {
-    // In a real implementation, you would check the user's GitHub connection status
-    // This could be stored in the user table or a separate OAuth connections table
-    // For now, we'll check if the user has GitHub-related data
-
-    // You can implement this by:
-    // 1. Checking if user has github_id field
-    // 2. Checking OAuth connections table
-    // 3. Making a request to GitHub API with stored tokens
-
-    // Placeholder implementation - replace with actual GitHub connection check
-    const userDetails = await UserDetailsController.getUserDetails({
-      user_id: user.id,
-      include_servers: false,
-      include_activity: false,
-      include_stats: false
-    });
-
-    if (!userDetails.success || !userDetails.user) {
-      return false;
-    }
-
-    // Check if user has GitHub connection data
-    // This assumes you have a github_id or github_username field in your user table
-    return !!(userDetails.user.social_links?.github || userDetails.user.oauth?.github);
-
+    // Source of truth: OAuth connections table via userOperations
+    const conn = await userOperations.getGitHubConnection(user.id)
+    return !!conn
   } catch (error) {
-    console.error('Error checking GitHub connection:', error);
-    return false;
+    console.error('Error checking GitHub connection:', error)
+    return false
   }
 }
 
 // Check if user has already claimed GitHub reward
 async function hasClaimedGitHubReward(userId: number): Promise<boolean> {
   try {
-    // Check if user has a record of claiming GitHub reward
-    // This could be stored in a separate rewards table or user metadata
-    // For now, we'll use a simple approach with user metadata
-
-    const userDetails = await UserDetailsController.getUserDetails({
-      user_id: userId,
-      include_servers: false,
-      include_activity: false,
-      include_stats: false
-    });
-
-    if (!userDetails.success || !userDetails.user) {
-      return false;
-    }
-
-    // Check if user has claimed GitHub reward
-    // This assumes you have a github_reward_claimed field or similar
-    return !!(userDetails.user.github_reward_claimed);
-
+    const user = await userOperations.getUserById(userId)
+    return !!(user as any)?.github_reward_claimed
   } catch (error) {
-    console.error('Error checking GitHub reward status:', error);
-    return false;
+    console.error('Error checking GitHub reward status:', error)
+    return false
   }
 }
 
@@ -160,14 +123,14 @@ async function markGitHubRewardClaimed(userId: number): Promise<boolean> {
   try {
     // Mark the GitHub reward as claimed in the user record
     // This is a simplified implementation
-    
+
     const updateResult = await UserDetailsController.updateUserMetadata(
       userId,
       { github_reward_claimed: true, github_reward_claimed_at: new Date() }
     );
 
     return updateResult.success;
-    
+
   } catch (error) {
     console.error('Error marking GitHub reward as claimed:', error);
     return false;
@@ -231,8 +194,11 @@ export async function POST(request: NextRequest) {
 
     // Award coins for GitHub connection
     const rewardAmount = 40; // GitHub connection reward
-    
+
     try {
+      const beforeUser = await userOperations.getUserById(user.id)
+      const before = beforeUser?.coins ?? 0
+
       const updateResult = await UserDetailsController.updateUserCoins(
         user.id,
         rewardAmount,
@@ -246,6 +212,34 @@ export async function POST(request: NextRequest) {
           message: 'Failed to award coins. Please try again.'
         }, { status: 500 });
       }
+
+      // Rewards ledger entry (best-effort)
+      try {
+        const { rewardsLedgerOperations } = await import('@/hooks/managers/database/rewards-ledger')
+        await rewardsLedgerOperations.add({
+          user_id: user.id,
+          delta: rewardAmount,
+          balance_before: before,
+          balance_after: before + rewardAmount,
+          source_category: 'promotion',
+          source_action: 'earn',
+          reference_id: 'github_connection_reward',
+          message: 'GitHub Account Connection Reward'
+        })
+      } catch {}
+
+      // Security log entry for earning logs UI
+      try {
+        const { SecurityLogsController } = await import('@/hooks/managers/controller/Security/Logs')
+        const { SecurityLogAction, SecurityLogSeverity } = await import('@/database/tables/cythro_dash_users_logs')
+        await SecurityLogsController.createLog({
+          user_id: user.id,
+          action: SecurityLogAction.ADMIN_ACTION_PERFORMED,
+          severity: SecurityLogSeverity.LOW,
+          description: `Task Reward: GitHub Connection (+${rewardAmount} coins)`,
+          details: { source_category: 'promotion', reference_id: 'github_connection_reward', amount: rewardAmount },
+        })
+      } catch {}
 
       // Mark reward as claimed
       const markResult = await markGitHubRewardClaimed(user.id);

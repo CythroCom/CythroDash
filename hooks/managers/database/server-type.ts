@@ -183,7 +183,7 @@ class ServerTypeOperations {
         {
           $or: [
             { "access_restrictions.min_user_role": { $exists: false } },
-            { "access_restrictions.min_user_role": { $lte: userRole } }
+            { "access_restrictions.min_user_role": { $gte: userRole } }
           ]
         },
         // Check verification requirement
@@ -234,35 +234,40 @@ class ServerTypeOperations {
       isVerified?: boolean;
     }
   ): Promise<ServerTypeSummary[]> {
-    let serverTypes: CythroDashServerType[];
+    // Start from active types to avoid subtle DB query mismatches and do deterministic filtering in code
+    let serverTypes: CythroDashServerType[] = await this.getActiveServerTypes();
 
-    if (filters?.userId !== undefined && filters?.userRole !== undefined && filters?.isVerified !== undefined) {
-      serverTypes = await this.getServerTypesForUser(filters.userId, filters.userRole, filters.isVerified);
-    } else if (filters?.locationId) {
-      serverTypes = await this.getServerTypesForLocation(filters.locationId);
-    } else if (filters?.planId) {
-      serverTypes = await this.getServerTypesForPlan(filters.planId);
-    } else if (filters?.category) {
-      serverTypes = await this.getServerTypesByCategory(filters.category);
-    } else if (filters?.featured) {
-      serverTypes = await this.getFeaturedServerTypes();
-    } else if (filters?.popular) {
-      serverTypes = await this.getPopularServerTypes();
+    // Basic property filters
+    if (filters?.category) {
+      serverTypes = serverTypes.filter(st => st.category === filters.category);
+    }
+    if (filters?.featured !== undefined) {
+      serverTypes = serverTypes.filter(st => !!st.featured === !!filters.featured);
+    }
+    if (filters?.popular !== undefined) {
+      serverTypes = serverTypes.filter(st => !!st.popular === !!filters.popular);
+    }
+
+    // Availability filters
+    if (filters?.userId !== undefined && filters.userRole !== undefined && filters.isVerified !== undefined) {
+      // Use helper that applies min_user_role, verification, whitelist and optional location in a single place
+      serverTypes = ServerTypeHelpers.getAvailableForUser(
+        serverTypes,
+        filters.userRole,
+        filters.isVerified,
+        filters.locationId,
+        filters.userId
+      );
     } else {
-      serverTypes = await this.getActiveServerTypes();
-    }
-
-    // Apply additional filters
-    if (filters?.locationId && !filters?.userId) {
-      serverTypes = serverTypes.filter(st => this.isServerTypeAvailableForLocation(st, filters.locationId!));
-    }
-
-    if (filters?.planId && !filters?.userId) {
-      serverTypes = serverTypes.filter(st => this.isServerTypeAvailableForPlan(st, filters.planId!));
+      if (filters?.locationId) {
+        serverTypes = serverTypes.filter(st => this.isServerTypeAvailableForLocation(st, filters.locationId!));
+      }
+      if (filters?.planId) {
+        serverTypes = serverTypes.filter(st => this.isServerTypeAvailableForPlan(st, filters.planId!));
+      }
     }
 
     // Convert to summaries and sort
-    const summaries = serverTypes.map(st => ServerTypeHelpers.getSummary(st));
     return ServerTypeHelpers.sortServerTypes(serverTypes).map(st => ServerTypeHelpers.getSummary(st));
   }
 

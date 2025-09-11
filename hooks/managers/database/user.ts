@@ -61,6 +61,7 @@ export interface UpdateUserData {
   };
   referral_earnings?: number;
   referred_by?: string;
+  referral_code?: string;
 }
 
 // Database collection management
@@ -100,7 +101,8 @@ class CythroDashUsersCollection {
       await this.collection.createIndex({ verified: 1 });
       await this.collection.createIndex({ last_activity: -1 });
       await this.collection.createIndex({ created_at: -1 });
-      
+      await this.collection.createIndex({ last_login: -1 });
+
       // Compound indexes
       await this.collection.createIndex({ deleted: 1, banned: 1 });
       await this.collection.createIndex({ role: 1, deleted: 1, banned: 1 });
@@ -885,34 +887,7 @@ export class UserOperations {
     return result.modifiedCount > 0;
   }
 
-  // Get user by username (for transfers)
-  async getUserByUsername(username: string): Promise<CythroDashUser | null> {
-    const collection = await this.getCollection();
-    return await collection.findOne({
-      username: username,
-      deleted: false
-    });
-  }
 
-  // Search users (for transfer autocomplete)
-  async searchUsers(searchTerm: string, limit: number = 10): Promise<CythroDashUser[]> {
-    const collection = await this.getCollection();
-
-    const searchRegex = new RegExp(searchTerm, 'i');
-
-    return await collection
-      .find({
-        $or: [
-          { username: searchRegex },
-          { display_name: searchRegex },
-          { email: searchRegex }
-        ],
-        deleted: false,
-        banned: false
-      })
-      .limit(limit)
-      .toArray();
-  }
 }
 
 // Export singleton instance

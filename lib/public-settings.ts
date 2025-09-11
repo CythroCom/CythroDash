@@ -1,4 +1,10 @@
 import settingsOperations from '@/hooks/managers/database/settings'
+import { SAFE_SETTINGS } from '@/database/tables/cythro_dash_settings'
+
+function defaultFor(key: string): any | undefined {
+  const def = SAFE_SETTINGS.find(s => s.key === key)
+  return def?.default
+}
 
 export async function getPublicSetting<T = any>(key: string, fallback?: T): Promise<T | undefined> {
   try {
@@ -6,10 +12,14 @@ export async function getPublicSetting<T = any>(key: string, fallback?: T): Prom
     const val = await settingsOperations.getValue<T>(key)
     if (val !== undefined && val !== null) return val
     const envVal = (process.env as any)?.[key]
-    return (envVal as any) ?? fallback
+    if (envVal !== undefined) return envVal as any
+    const def = defaultFor(key)
+    return (def as any) ?? fallback
   } catch {
     const envVal = (process.env as any)?.[key]
-    return (envVal as any) ?? fallback
+    if (envVal !== undefined) return envVal as any
+    const def = defaultFor(key)
+    return (def as any) ?? fallback
   }
 }
 
@@ -19,6 +29,8 @@ export async function getPublicFlag(key: string, fallback?: boolean): Promise<bo
   if (typeof val === 'string') return val === 'true'
   const envVal = (process.env as any)?.[key]
   if (envVal !== undefined) return String(envVal) === 'true'
+  const def = defaultFor(key)
+  if (typeof def === 'boolean') return def
   return Boolean(fallback)
 }
 

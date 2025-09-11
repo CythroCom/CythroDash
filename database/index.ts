@@ -16,9 +16,11 @@ export async function connectToDatabase(): Promise<Db> {
     return db;
   }
 
-  const uri = process.env.MONGODB_URI;
+  // Prefer database-driven config with env fallback
+  const { getConfig } = await import('./config-manager.js')
+  const uri: string | undefined = await (getConfig as any)('database.uri', process.env.MONGODB_URI)
   if (!uri) {
-    throw new Error('MONGODB_URI environment variable is not defined');
+    throw new Error('Database URI is not configured. Set MONGODB_URI or run `npx cythrodash setup`.');
   }
 
   try {
@@ -26,6 +28,10 @@ export async function connectToDatabase(): Promise<Db> {
     await client.connect();
     db = client.db(); // Uses database from connection string
     console.log('Connected to MongoDB successfully');
+    try {
+      const { primeEnvFromDb } = await import('./config-manager.js')
+      await (primeEnvFromDb as any)()
+    } catch {}
     return db;
   } catch (error) {
     console.error('Failed to connect to MongoDB:', error);

@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { locationOperations } from '@/hooks/managers/database/location';
 import { LocationStatus, LocationVisibility } from '@/database/tables/cythro_dash_locations';
 import { z } from 'zod';
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache';
 
 // Input validation schema for GET request
 const getServerLocationsSchema = z.object({
@@ -190,6 +191,27 @@ export async function GET(request: NextRequest) {
     const filters = validation.data;
     const user = authResult.user;
 
+    // Cache (per-user + filters)
+    const t0 = Date.now();
+    const bypass = shouldBypassCache(request.url);
+    const cacheKey = makeKey([
+      'server_locations', user.id,
+      filters.server_type_id || '', filters.plan_id || '',
+      filters.include_capacity ?? true, filters.include_stats ?? false,
+      filters.sort_by, filters.sort_order
+    ]);
+    if (!bypass) {
+      const cached = getCache<any>(cacheKey);
+      const ifNoneMatch = request.headers.get('if-none-match') || '';
+      if (cached.hit && cached.value) {
+        const etag = cached.etag || makeETagFromObject(cached.value);
+        if (etag && ifNoneMatch && ifNoneMatch === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+        }
+        return NextResponse.json(cached.value, { status: 200, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+      }
+    }
+
     // Get public locations that are active and available for users
     const locations = await locationOperations.getPublicLocations();
     
@@ -303,7 +325,7 @@ export async function GET(request: NextRequest) {
       'X-RateLimit-Reset': Math.ceil(rateLimitResult.resetTime / 1000).toString()
     };
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       message: 'Server locations retrieved successfully',
       locations: sortedLocations,
@@ -311,11 +333,17 @@ export async function GET(request: NextRequest) {
       user_permissions: {
         can_create_servers: user.role <= 1, // Users and admins can create servers
         max_servers: user.max_servers || null,
-        requires_verification: !user.verified
+        requires_verification: !user.verified,
+        current_balance: user.coins || 0
       }
-    }, { 
+    };
+
+    const etag = makeETagFromObject(payload);
+    if (!bypass) setCache(cacheKey, payload, 60_000, { ...responseHeaders, ETag: etag }, etag);
+
+    return NextResponse.json(payload, {
       status: 200,
-      headers: responseHeaders
+      headers: { ...responseHeaders, ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` }
     });
 
   } catch (error) {

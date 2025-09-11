@@ -57,7 +57,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const parsed = updateSchema.safeParse(body)
     if (!parsed.success) return NextResponse.json({ success: false, message: 'Invalid payload', errors: parsed.error.errors }, { status: 400 })
 
-    const updated = await shortLinksOperations.updateLink(parsedId.data.id, parsed.data)
+    const updateData = { ...parsed.data, description: parsed.data.description ?? undefined }
+    const updated = await shortLinksOperations.updateLink(parsedId.data.id, updateData)
     try {
       await SecurityLogsController.createLog({ user_id: auth.user.id, action: SecurityLogAction.ADMIN_ACTION_PERFORMED, severity: SecurityLogSeverity.LOW, description: `Updated short link ${updated?.slug}`, details: { id: updated?.id, slug: updated?.slug } })
     } catch {}

@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LocationController, UpdateLocationRequest } from '@/hooks/managers/controller/Admin/LocationController';
 import { LocationStatus, LocationVisibility } from '@/database/tables/cythro_dash_locations';
 import { z } from 'zod';
+import { requireAdmin } from '@/lib/auth/middleware';
 
 // Input validation schema for PATCH request
 const updateLocationSchema = z.object({
@@ -40,58 +41,7 @@ const updateLocationSchema = z.object({
   }).optional(),
 });
 
-// Authentication function following the established pattern
-async function authenticateRequest(request: NextRequest): Promise<{ success: boolean; user?: any; error?: string }> {
-  try {
-    // Get session token from cookies
-    const sessionToken = request.cookies.get('session_token')?.value;
 
-    if (!sessionToken) {
-      return {
-        success: false,
-        error: 'No session token found'
-      };
-    }
-
-    // Validate session token format (should be hex string)
-    const hexTokenRegex = /^[a-f0-9]{64}$/i; // 32 bytes = 64 hex characters
-    if (!hexTokenRegex.test(sessionToken)) {
-      return {
-        success: false,
-        error: 'Invalid session token format'
-      };
-    }
-
-    // Get user information from request headers (sent by client)
-    const userDataHeader = request.headers.get('x-user-data');
-    if (userDataHeader) {
-      try {
-        const userData = JSON.parse(decodeURIComponent(userDataHeader));
-
-        if (userData && userData.id && userData.username && userData.email) {
-          return {
-            success: true,
-            user: userData
-          };
-        }
-      } catch (parseError) {
-        console.log('User data header parsing failed:', parseError);
-      }
-    }
-
-    return {
-      success: false,
-      error: 'User identification required'
-    };
-
-  } catch (error) {
-    console.error('Authentication error:', error);
-    return {
-      success: false,
-      error: 'Authentication failed'
-    };
-  }
-}
 
 /**
  * GET /api/admin/locations/[id]
@@ -103,21 +53,8 @@ export async function GET(
 ) {
   try {
     // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin role
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.success) return admin.response!;
 
     // Await params before accessing properties
     const resolvedParams = await params;
@@ -133,7 +70,7 @@ export async function GET(
     // Get location data using the controller
     const result = await LocationController.getLocationById(
       locationId,
-      authResult.user.id
+      admin.user!.id
     );
 
     if (!result.success) {
@@ -169,21 +106,8 @@ export async function PATCH(
 ) {
   try {
     // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin role
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.success) return admin.response!;
 
     // Await params before accessing properties
     const resolvedParams = await params;
@@ -219,7 +143,7 @@ export async function PATCH(
     const result = await LocationController.updateLocation(
       locationId,
       updateLocationRequest,
-      authResult.user.id,
+      admin.user!.id,
       clientIP
     );
 
@@ -248,21 +172,8 @@ export async function DELETE(
 ) {
   try {
     // Apply authentication
-    const authResult = await authenticateRequest(request);
-    if (!authResult.success || !authResult.user) {
-      return NextResponse.json({
-        success: false,
-        message: 'Authentication required'
-      }, { status: 401 });
-    }
-
-    // Check admin role
-    if (authResult.user.role !== 0) {
-      return NextResponse.json({
-        success: false,
-        message: 'Admin access required'
-      }, { status: 403 });
-    }
+    const admin = await requireAdmin(request);
+    if (!admin.success) return admin.response!;
 
     // Await params before accessing properties
     const resolvedParams = await params;
@@ -283,7 +194,7 @@ export async function DELETE(
     // Delete location using the controller
     const result = await LocationController.deleteLocation(
       locationId,
-      authResult.user.id,
+      admin.user!.id,
       clientIP
     );
 

@@ -1,4 +1,21 @@
 import { create } from 'zustand'
+import { useAuthStore } from './user-store'
+
+
+
+
+
+// Temporary compatibility: include x-user-data header built from current user
+function getAdminAuthHeaders(): HeadersInit {
+  const base: HeadersInit = { 'Content-Type': 'application/json' }
+  try {
+    const u: any = useAuthStore.getState().currentUser
+    if (u && u.id && u.username && u.email) {
+      return { ...base, 'x-user-data': encodeURIComponent(JSON.stringify({ id: u.id, username: u.username, email: u.email, role: u.role })) }
+    }
+  } catch {}
+  return base
+}
 
 export type Setting = {
   key: string
@@ -27,10 +44,9 @@ export const useAdminSettingsStore = create<State>((set, get) => ({
   fetchAll: async () => {
     try {
       set({ loading: true, error: undefined })
-      const { useAuthStore } = await import('@/stores/user-store')
-      const u = useAuthStore.getState().currentUser
-      const headers: HeadersInit = { 'Content-Type': 'application/json' }
-      if (u) headers['x-user-data'] = encodeURIComponent(JSON.stringify({ id: u.id, username: u.username, email: u.email, role: u.role }))
+
+      const headers: HeadersInit = getAdminAuthHeaders()
+
       const res = await fetch('/api/admin/settings', { headers, credentials: 'include' })
       const json = await res.json()
       if (!json.success) { set({ loading: false, error: json.message || 'Failed to fetch settings' }); return false }
@@ -41,10 +57,9 @@ export const useAdminSettingsStore = create<State>((set, get) => ({
   fetchCategory: async (category) => {
     try {
       set({ loading: true, error: undefined })
-      const { useAuthStore } = await import('@/stores/user-store')
-      const u = useAuthStore.getState().currentUser
-      const headers: HeadersInit = { 'Content-Type': 'application/json' }
-      if (u) headers['x-user-data'] = encodeURIComponent(JSON.stringify({ id: u.id, username: u.username, email: u.email, role: u.role }))
+
+      const headers: HeadersInit = getAdminAuthHeaders()
+
       const res = await fetch(`/api/admin/settings/${category}`, { headers, credentials: 'include' })
       const json = await res.json()
       if (!json.success) { set({ loading: false, error: json.message || 'Failed to fetch settings' }); return false }
@@ -60,10 +75,9 @@ export const useAdminSettingsStore = create<State>((set, get) => ({
       if (idx !== -1) updated[idx] = { ...updated[idx], value }
       set({ items: updated })
 
-      const { useAuthStore } = await import('@/stores/user-store')
-      const u = useAuthStore.getState().currentUser
-      const headers: HeadersInit = { 'Content-Type': 'application/json' }
-      if (u) headers['x-user-data'] = encodeURIComponent(JSON.stringify({ id: u.id, username: u.username, email: u.email, role: u.role }))
+
+      const headers: HeadersInit = getAdminAuthHeaders()
+
       const res = await fetch('/api/admin/settings', { method: 'PUT', headers, credentials: 'include', body: JSON.stringify({ key, value }) })
       const json = await res.json()
       if (!json.success) { set({ items: prev, error: json.message || 'Failed to update setting' }); return false }

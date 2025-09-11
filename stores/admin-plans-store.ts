@@ -25,6 +25,7 @@ export type AdminPlanSummary = {
   }
   price: number
   billing_cycle: BillingCycle
+  billing_cycle_value?: string
   setup_fee?: number
   available_locations: string[]
   status: PlanStatus

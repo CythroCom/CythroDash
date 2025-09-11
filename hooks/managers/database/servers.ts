@@ -114,6 +114,7 @@ class ServersCollection {
       // Lifecycle indexes
       await this.collection.createIndex({ expiry_date: 1 });
       await this.collection.createIndex({ auto_delete_at: 1 });
+      await this.collection.createIndex({ 'billing.next_billing_date': 1 });
 
       console.log('Server database indexes created successfully');
     } catch (error) {
@@ -333,9 +334,15 @@ export const serverOperations = {
         // Get current server to merge billing
         const currentServer = await collection.findOne({ id: serverId });
         if (currentServer) {
+          const nextBilling = (updateData.billing as any)?.next_billing_date
+          const normalizedBilling = { ...updateData.billing } as any
+          if (typeof nextBilling === 'string') {
+            const d = new Date(nextBilling)
+            if (!isNaN(d.getTime())) normalizedBilling.next_billing_date = d
+          }
           updateFields.billing = {
             ...currentServer.billing,
-            ...updateData.billing
+            ...normalizedBilling,
           };
         }
       }
@@ -453,6 +460,34 @@ export const serverOperations = {
     } catch (error) {
       console.error('Error finding servers missing expiry:', error);
       return [];
+    }
+  },
+
+  async findServersBillingDue(cutoff: Date): Promise<CythroDashServer[]> {
+    try {
+      const collection = await serversCollection.getCollection();
+      return await collection.find({
+        status: ServerStatus.ACTIVE,
+        billing_status: BillingStatus.ACTIVE,
+        'billing.next_billing_date': { $lte: cutoff },
+      }).toArray();
+    } catch (error) {
+      console.error('Error finding servers billing due:', error);
+      return [];
+    }
+  },
+
+  async applyBillingCharge(serverId: string, amount: number, nextBillingDate: Date, billedAt: Date): Promise<boolean> {
+    try {
+      const collection = await serversCollection.getCollection();
+      const result = await collection.updateOne({ id: serverId }, {
+        $inc: { 'billing.total_cost': amount },
+        $set: { 'billing.last_billing_date': billedAt, 'billing.next_billing_date': nextBillingDate, updated_at: billedAt },
+      });
+      return result.modifiedCount > 0;
+    } catch (error) {
+      console.error('Error applying billing charge:', error);
+      return false;
     }
   }
 };

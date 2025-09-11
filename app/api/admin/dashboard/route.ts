@@ -9,6 +9,7 @@ import { SERVERS_COLLECTION, ServerStatus, PowerState } from '@/database/tables/
 import { transfersCollectionName, TransferStatus } from '@/database/tables/cythro_dash_transfers'
 import { REFERRAL_CLICKS_COLLECTION, REFERRAL_SIGNUPS_COLLECTION } from '@/database/tables/cythro_dash_referrals'
 import { getPublicFlag } from '@/lib/public-settings'
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache'
 
 export const runtime = 'nodejs'
 
@@ -44,6 +45,22 @@ export async function GET(request: NextRequest) {
   const auth = await authenticateRequest(request)
   if (!auth.success || !auth.user) return NextResponse.json({ success: false, message: 'Authentication required' }, { status: 401 })
   if (auth.user.role !== 0) return NextResponse.json({ success: false, message: 'Admin access required' }, { status: 403 })
+
+  // Short TTL cache for hot admin dashboard
+  const t0 = Date.now()
+  const bypass = shouldBypassCache(request.url)
+  const cacheKey = makeKey(['admin_dashboard'])
+  if (!bypass) {
+    const cached = getCache<any>(cacheKey)
+    const ifNoneMatch = request.headers.get('if-none-match') || ''
+    if (cached.hit && cached.value) {
+      const etag = cached.etag || makeETagFromObject(cached.value)
+      if (etag && ifNoneMatch && ifNoneMatch === etag) {
+        return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } })
+      }
+      return NextResponse.json(cached.value, { status: 200, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } })
+    }
+  }
 
   try {
     const db = await connectToDatabase()
@@ -117,7 +134,7 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 10)
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       data: {
         users: { total: totalUsers, new24h: newUsers24h, active24h: activeUsers24h, totalCoins },
@@ -126,7 +143,12 @@ export async function GET(request: NextRequest) {
         referrals: referralMetrics,
         activity
       }
-    })
+    }
+
+    const etag = makeETagFromObject(payload)
+    if (!bypass) setCache(cacheKey, payload, 15_000, { ETag: etag })
+
+    return NextResponse.json(payload, { status: 200, headers: { ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` } })
   } catch (e: any) {
     console.error('Admin dashboard error:', e)
     return NextResponse.json({ success: false, message: 'Failed to load dashboard data' }, { status: 500 })

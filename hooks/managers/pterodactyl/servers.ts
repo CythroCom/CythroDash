@@ -64,7 +64,7 @@ export interface PterodactylServer {
     installed: boolean;
     environment: Record<string, any>;
   };
-  // Resource usage information
+  // Resource usage information (application API)
   resource_usage?: {
     memory_bytes: number;
     cpu_absolute: number;
@@ -72,7 +72,23 @@ export interface PterodactylServer {
     network_rx_bytes: number;
     network_tx_bytes: number;
     uptime: number;
+    players?: number;
   };
+  // Some endpoints expose a 'resources' block and 'current_state'
+  resources?: {
+    memory_bytes: number;
+    cpu_absolute: number;
+    disk_bytes: number;
+    network_rx_bytes: number;
+    network_tx_bytes: number;
+    uptime: number;
+    players?: number;
+  };
+  current_state?: string;
+  // Startup and environment sometimes appear at root
+  startup?: string;
+  environment?: Record<string, any>;
+  relationships?: Record<string, any>;
   // Additional server properties
   egg_name?: string;
   created_at: string;
@@ -435,14 +451,15 @@ export async function panelServerDelete(serverId: number, force = false): Promis
 // SERVER POWER MANAGEMENT FUNCTIONS (Client API)
 
 /** Start a server using the client API */
-export async function panelServerStart(serverId: number): Promise<void> {
+export async function panelServerStart(server: number | string): Promise<void> {
   const { baseUrl, clientApiKey } = getPterodactylConfig();
+  const identifier = String(server);
 
   if (!clientApiKey) {
     throw new PterodactylError("Client API key not configured", 500, "CONFIG_ERROR");
   }
 
-  const response = await fetch(`${baseUrl}/api/client/servers/${serverId}/power`, {
+  const response = await fetch(`${baseUrl}/api/client/servers/${identifier}/power`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${clientApiKey}`,
@@ -458,14 +475,15 @@ export async function panelServerStart(serverId: number): Promise<void> {
 }
 
 /** Stop a server using the client API */
-export async function panelServerStop(serverId: number): Promise<void> {
+export async function panelServerStop(server: number | string): Promise<void> {
   const { baseUrl, clientApiKey } = getPterodactylConfig();
+  const identifier = String(server);
 
   if (!clientApiKey) {
     throw new PterodactylError("Client API key not configured", 500, "CONFIG_ERROR");
   }
 
-  const response = await fetch(`${baseUrl}/api/client/servers/${serverId}/power`, {
+  const response = await fetch(`${baseUrl}/api/client/servers/${identifier}/power`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${clientApiKey}`,
@@ -481,14 +499,15 @@ export async function panelServerStop(serverId: number): Promise<void> {
 }
 
 /** Restart a server using the client API */
-export async function panelServerRestart(serverId: number): Promise<void> {
+export async function panelServerRestart(server: number | string): Promise<void> {
   const { baseUrl, clientApiKey } = getPterodactylConfig();
+  const identifier = String(server);
 
   if (!clientApiKey) {
     throw new PterodactylError("Client API key not configured", 500, "CONFIG_ERROR");
   }
 
-  const response = await fetch(`${baseUrl}/api/client/servers/${serverId}/power`, {
+  const response = await fetch(`${baseUrl}/api/client/servers/${identifier}/power`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${clientApiKey}`,
@@ -504,14 +523,15 @@ export async function panelServerRestart(serverId: number): Promise<void> {
 }
 
 /** Kill a server using the client API */
-export async function panelServerKill(serverId: number): Promise<void> {
+export async function panelServerKill(server: number | string): Promise<void> {
   const { baseUrl, clientApiKey } = getPterodactylConfig();
+  const identifier = String(server);
 
   if (!clientApiKey) {
     throw new PterodactylError("Client API key not configured", 500, "CONFIG_ERROR");
   }
 
-  const response = await fetch(`${baseUrl}/api/client/servers/${serverId}/power`, {
+  const response = await fetch(`${baseUrl}/api/client/servers/${identifier}/power`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${clientApiKey}`,

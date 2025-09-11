@@ -9,8 +9,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { serverSoftwareOperations } from '@/hooks/managers/database/server-software';
 import { serverTypeOperations } from '@/hooks/managers/database/server-type';
-import { SoftwareStability } from '@/database/tables/cythro_dash_server_software';
+import { SoftwareStability, ServerSoftwareHelpers } from '@/database/tables/cythro_dash_server_software';
+import { ServerTypeHelpers } from '@/database/tables/cythro_dash_server_types';
 import { z } from 'zod';
+import { getCache, setCache, makeKey, shouldBypassCache, makeETagFromObject } from '@/lib/ttlCache';
 
 // Input validation schema for GET request
 const getServerSoftwareSchema = z.object({
@@ -170,6 +172,31 @@ export async function GET(request: NextRequest) {
     const filters = validation.data;
     const user = authResult.user;
 
+    // Cache (per-user + filters)
+    const t0 = Date.now();
+    const bypass = shouldBypassCache(request.url);
+    const cacheKey = makeKey([
+      'server_software', user.id,
+      filters.server_type_id,
+      filters.stability || '', filters.featured ?? '', filters.recommended ?? '',
+      filters.location_id || '', filters.plan_id || '', filters.search || '',
+      filters.include_stats ?? false
+    ]);
+    if (!bypass) {
+      const cached = getCache<any>(cacheKey);
+      const ifNoneMatch = request.headers.get('if-none-match') || '';
+      if (cached.hit && cached.value) {
+        const etag = cached.etag || makeETagFromObject(cached.value);
+        if (etag && ifNoneMatch && ifNoneMatch === etag) {
+          return new NextResponse(null, { status: 304, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+        }
+        return NextResponse.json(cached.value, { status: 200, headers: { ETag: etag, 'X-Cache': 'HIT', 'X-Response-Time': `${Date.now()-t0}ms` } });
+      }
+    }
+
+    // Accumulator for stats from the same dataset we return
+    let serverSoftwareRaw: any[] = []
+
     // Validate that the server type exists and user has access to it
     const serverType = await serverTypeOperations.getServerTypeById(filters.server_type_id);
     if (!serverType) {
@@ -179,19 +206,34 @@ export async function GET(request: NextRequest) {
       }, { status: 404 });
     }
 
-    // Check if user has access to this server type
-    const userServerTypes = await serverTypeOperations.getServerTypesForUser(
-      user.id, 
-      user.role, 
-      user.verified || false
+    // Check if user has access to this server type (consistent with /types logic)
+    const hasAccess = ServerTypeHelpers.isAvailableForUser(
+      serverType,
+      user.role,
+      user.verified || false,
+      user.id
     );
-    const hasAccess = userServerTypes.some(st => st.id === filters.server_type_id);
-    
+
     if (!hasAccess) {
+      // Do not hard-fail the wizard. Return empty software list with 200 OK so UI can proceed gracefully
+      const responseHeaders = {
+        'X-RateLimit-Limit': RATE_LIMIT_MAX_REQUESTS.toString(),
+        'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
+        'X-RateLimit-Reset': Math.ceil(rateLimitResult.resetTime / 1000).toString()
+      };
       return NextResponse.json({
-        success: false,
-        message: 'You do not have access to this server type'
-      }, { status: 403 });
+        success: true,
+        message: 'No software available for this server type with your current permissions',
+        server_type: { id: serverType.id, name: serverType.name, category: serverType.category },
+        server_software: [],
+        stats: null,
+        user_permissions: {
+          can_create_servers: user.role <= 1,
+          max_servers: user.max_servers || null,
+          requires_verification: !user.verified,
+          current_balance: user.coins || 0
+        }
+      }, { status: 200, headers: responseHeaders });
     }
 
     // Build filters for server software query
@@ -235,8 +277,8 @@ export async function GET(request: NextRequest) {
         user.verified || false
       );
       const userSoftwareIds = new Set(userSoftware.map(s => s.id));
-      serverSoftware = allSoftware
-        .filter(s => userSoftwareIds.has(s.id) && s.server_type_id === filters.server_type_id)
+      serverSoftwareRaw = allSoftware.filter(s => userSoftwareIds.has(s.id) && s.server_type_id === filters.server_type_id)
+      serverSoftware = serverSoftwareRaw
         .map(s => ({
           id: s.id,
           name: s.name,
@@ -255,14 +297,63 @@ export async function GET(request: NextRequest) {
           startup_command: s.docker_config?.startup_command || ''
         }));
     } else {
-      // Regular filtered query
-      serverSoftware = await serverSoftwareOperations.getServerSoftwareSummaries(serverSoftwareFilters);
+      // Regular filtered query using code-based filtering to avoid DB special cases
+      const allSoftware = await serverSoftwareOperations.getActiveServerSoftware()
+      const applyAccess = (s: any) => {
+        const ar = s.access_restrictions
+        if (!ar) return true
+        if (typeof ar.min_user_role === 'number' && user.role > ar.min_user_role) return false
+        if (ar.requires_verification === true && !(user.verified || false)) return false
+        if (Array.isArray(ar.whitelist_users) && ar.whitelist_users.length > 0) {
+          if (!ar.whitelist_users.includes(user.id)) return false
+        }
+        return true
+      }
+      const byProps = (s: any) => {
+        if (filters.stability && s.stability !== filters.stability) return false
+        if (filters.featured !== undefined && !!s.featured !== !!filters.featured) return false
+        if (filters.recommended !== undefined && !!s.recommended !== !!filters.recommended) return false
+        return true
+      }
+      const serverSoftwareRaw = allSoftware
+        .filter(s => s.server_type_id === filters.server_type_id)
+        .filter(byProps)
+        .filter(applyAccess)
+      serverSoftware = serverSoftwareRaw.map((s) => ({
+        id: s.id,
+        name: s.name,
+        short_description: s.short_description,
+        stability: s.stability,
+        icon: s.icon,
+        recommended: s.recommended,
+        latest: s.latest,
+        version: s.version_info?.version || 'Unknown',
+        // Compute effective min requirements using server type base + overrides
+        ...(() => { const eff = (ServerSoftwareHelpers as any).getResourceRequirements
+          ? (ServerSoftwareHelpers as any).getResourceRequirements(s, serverType.resource_requirements)
+          : { min_memory: s.resource_overrides?.min_memory || 0, min_disk: s.resource_overrides?.min_disk || 0, min_cpu: s.resource_overrides?.min_cpu || 0 }
+        ; return { min_resources: { memory: eff.min_memory, disk: eff.min_disk, cpu: eff.min_cpu } } })(),
+        docker_image: s.docker_config?.image || '',
+        startup_command: s.docker_config?.startup_command || ''
+      }))
     }
 
-    // Get statistics if requested
+    // Get statistics if requested (based on returned dataset)
     let stats = null;
     if (filters.include_stats) {
-      stats = await serverSoftwareOperations.getServerSoftwareStats();
+      const list = Array.isArray(serverSoftware) ? serverSoftware : []
+      const stability_types = { stable: 0, beta: 0, alpha: 0, experimental: 0 } as any
+      for (const item of list as any[]) {
+        const key = String(item.stability).toLowerCase()
+        if (key in stability_types) stability_types[key]++
+      }
+      stats = {
+        total_software: list.length,
+        active_software: list.length,
+        stability_types,
+        featured_count: 0, // not part of mapped shape; can be added if needed
+        recommended_count: (list as any[]).filter((s: any) => !!s.recommended).length,
+      }
     }
 
     // Set rate limit headers
@@ -272,7 +363,7 @@ export async function GET(request: NextRequest) {
       'X-RateLimit-Reset': Math.ceil(rateLimitResult.resetTime / 1000).toString()
     };
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       message: 'Server software retrieved successfully',
       server_type: {
@@ -285,11 +376,17 @@ export async function GET(request: NextRequest) {
       user_permissions: {
         can_create_servers: user.role <= 1, // Users and admins can create servers
         max_servers: user.max_servers || null,
-        requires_verification: !user.verified
+        requires_verification: !user.verified,
+        current_balance: user.coins || 0
       }
-    }, { 
+    };
+
+    const etag = makeETagFromObject(payload);
+    if (!bypass) setCache(cacheKey, payload, 60_000, { ...responseHeaders, ETag: etag }, etag);
+
+    return NextResponse.json(payload, {
       status: 200,
-      headers: responseHeaders
+      headers: { ...responseHeaders, ETag: etag, 'X-Cache': bypass ? 'BYPASS' : 'MISS', 'X-Response-Time': `${Date.now()-t0}ms` }
     });
 
   } catch (error) {

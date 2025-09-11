@@ -139,8 +139,9 @@ export class AdminGetUsersController {
       const page = Math.max(1, request.page || 1);
       const limit = Math.min(100, Math.max(1, request.limit || 25)); // Max 100 users per page
       const skip = (page - 1) * limit;
-      const sortBy = request.sort_by || 'created_at';
-      const sortOrder = request.sort_order === 'asc' ? 1 : -1;
+      // Default sorting: ID ascending (stable, predictable)
+      const sortBy = request.sort_by || 'id';
+      const sortOrder = request.sort_order ? (request.sort_order === 'asc' ? 1 : -1) : 1;
 
       // Build filter query
       const filter: any = {};

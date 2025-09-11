@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
 
     response.cookies.set('session_token', '', cookieOptions);
     response.cookies.set('refresh_token', '', cookieOptions);
+    response.cookies.set('x_user_data', '', cookieOptions);
 
     return response;
 

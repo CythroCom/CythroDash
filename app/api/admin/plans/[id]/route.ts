@@ -30,7 +30,7 @@ const updatePlanSchema = z.object({
   }).optional(),
   price: z.number().min(0).optional(),
   billing_cycle: z.nativeEnum(BillingCycle).optional(),
-  billing_cycle_value: z.string().regex(/^([1-9][0-9]*)\s*(m|h|d|month|y)$/).optional(),
+  billing_cycle_value: z.string().regex(/^([1-9][0-9]*)\s*(m|h|d|w|month|y)$/).optional(),
   setup_fee: z.number().min(0).optional(),
   available_locations: z.array(z.string()).optional(),
   status: z.nativeEnum(PlanStatus).optional(),

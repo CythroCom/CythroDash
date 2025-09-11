@@ -13,6 +13,8 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/user-store'
 import { useAdminRoleMonitoring, useRealTimeUserData } from '@/hooks/use-realtime-user'
 
+const isDev = typeof process !== 'undefined' && process.env.NODE_ENV !== 'production'
+
 export interface UseAdminAuthResult {
   isLoading: boolean
   isAuthenticated: boolean
@@ -30,13 +32,13 @@ export interface UseAdminAuthResult {
 export function useAdminAuth(redirectOnFailure: boolean = true): UseAdminAuthResult {
   const router = useRouter()
   const [isInitialLoading, setIsInitialLoading] = useState(true)
-  
-  const { 
-    isAuthenticated, 
-    currentUser, 
-    isLoading, 
-    refreshSession, 
-    checkSession 
+
+  const {
+    isAuthenticated,
+    currentUser,
+    isLoading,
+    refreshSession,
+    checkSession
   } = useAuthStore()
 
   // Set up real-time monitoring
@@ -52,27 +54,27 @@ export function useAdminAuth(redirectOnFailure: boolean = true): UseAdminAuthRes
       try {
         // First check if we have a valid session in store
         if (isAuthenticated && currentUser) {
-          console.log('Session valid, checking admin privileges...')
+          if (isDev) console.log('Session valid, checking admin privileges...')
           setIsInitialLoading(false)
-          
+
           // Check admin privileges (now handled by useAdminRoleMonitoring)
           if (redirectOnFailure && !isAdmin) {
-            console.log('User is not admin, redirecting...')
+            if (isDev) console.log('User is not admin, redirecting...')
             router.push('/')
           }
           return
         }
 
         // If not authenticated, try to refresh/check session
-        console.log('Checking authentication session for admin access...')
+        if (isDev) console.log('Checking authentication session for admin access...')
         const sessionValid = await checkSession()
-        
+
         if (!mounted) return
 
         if (!sessionValid) {
-          console.log('Session invalid, redirecting to login...')
+          if (isDev) console.log('Session invalid, redirecting to login...')
           setIsInitialLoading(false)
-          
+
           if (redirectOnFailure) {
             router.push('/auth/login?redirect=' + encodeURIComponent(window.location.pathname))
           }
@@ -82,11 +84,11 @@ export function useAdminAuth(redirectOnFailure: boolean = true): UseAdminAuthRes
         // If we get here, session is valid but we need to refresh user data
         await refreshSession()
         setIsInitialLoading(false)
-        
+
       } catch (error) {
         console.error('Admin session validation error:', error)
         setIsInitialLoading(false)
-        
+
         if (mounted && redirectOnFailure) {
           router.push('/auth/login?redirect=' + encodeURIComponent(window.location.pathname))
         }

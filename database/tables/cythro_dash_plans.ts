@@ -17,10 +17,12 @@ export enum PlanStatus {
 
 // Billing cycle enumeration
 export enum BillingCycle {
-  MONTHLY = 'monthly',
-  WEEKLY = 'weekly',
+  MINUTELY = 'minutely',
+  HOURLY = 'hourly',
   DAILY = 'daily',
-  HOURLY = 'hourly'
+  WEEKLY = 'weekly',
+  MONTHLY = 'monthly',
+  YEARLY = 'yearly',
 }
 
 // Resource limits interface
@@ -145,12 +147,16 @@ export const PlanHelpers = {
   // Calculate monthly cost for different billing cycles
   calculateMonthlyCost: (plan: CythroDashPlan): number => {
     switch (plan.billing_cycle) {
+      case BillingCycle.MINUTELY:
+        return plan.price * 60 * 24 * 30; // minutes per ~month
       case BillingCycle.HOURLY:
         return plan.price * 24 * 30; // Approximate monthly cost
       case BillingCycle.DAILY:
         return plan.price * 30;
       case BillingCycle.WEEKLY:
         return plan.price * 4.33; // Average weeks per month
+      case BillingCycle.YEARLY:
+        return plan.price / 12; // derive monthly from yearly price
       case BillingCycle.MONTHLY:
       default:
         return plan.price;

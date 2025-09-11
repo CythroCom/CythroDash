@@ -216,7 +216,7 @@ export class DiscordVerificationController {
   static async claimDiscordReward(userId: number, verificationId: string): Promise<DiscordVerificationResult> {
     try {
       const verification = await socialVerificationOperations.getVerificationById(verificationId);
-      
+
       if (!verification) {
         return {
           success: false,
@@ -259,7 +259,34 @@ export class DiscordVerificationController {
         };
       }
 
+      const before = user.coins || 0
       await userOperations.updateCoins(userId, verification.coins_reward, 'Discord server verification reward');
+
+      // Rewards ledger + security log (best-effort)
+      try {
+        const { rewardsLedgerOperations } = await import('@/hooks/managers/database/rewards-ledger')
+        await rewardsLedgerOperations.add({
+          user_id: userId,
+          delta: verification.coins_reward,
+          balance_before: before,
+          balance_after: before + verification.coins_reward,
+          source_category: 'promotion',
+          source_action: 'earn',
+          reference_id: `discord_verify_${verificationId}`,
+          message: 'Discord Server Verification Reward'
+        })
+      } catch {}
+      try {
+        const { SecurityLogsController } = await import('@/hooks/managers/controller/Security/Logs')
+        const { SecurityLogAction, SecurityLogSeverity } = await import('@/database/tables/cythro_dash_users_logs')
+        await SecurityLogsController.createLog({
+          user_id: userId,
+          action: SecurityLogAction.ADMIN_ACTION_PERFORMED,
+          severity: SecurityLogSeverity.LOW,
+          description: `Task Reward: Discord Server (+${verification.coins_reward} coins)`,
+          details: { source_category: 'promotion', reference_id: `discord_verify_${verificationId}`, amount: verification.coins_reward },
+        })
+      } catch {}
 
       // Mark verification as claimed
       const updatedVerification = await socialVerificationOperations.updateVerification(verificationId, {

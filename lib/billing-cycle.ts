@@ -1,7 +1,7 @@
 /**
  * Billing cycle parsing and duration utilities
- * Supports formats: {number}{unit} where unit in [m,h,d,month,y]
- * Example: 1m (minute), 24h, 30d, 1month, 6month, 1y
+ * Supports formats: {number}{unit} where unit in [m,h,d,w,month,y]
+ * Example: 1m (minute), 24h, 30d, 1w, 1month, 6month, 1y
  */
 
 export type ParsedCycle = {
@@ -33,6 +33,8 @@ export function parseBillingCycle(input: string): ParsedCycle {
     hour: '1h',
     day: '1d',
     week: '7d',
+    weeks: '7d',
+    w: '7d',
     month: '1month',
     year: '1y',
     yearly: '1y',

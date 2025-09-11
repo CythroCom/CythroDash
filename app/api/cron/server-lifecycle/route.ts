@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ServerLifecycleController } from '@/hooks/managers/controller/User/server-lifecycle';
 
-function checkCronAuth(request: NextRequest) {
-  const secret = process.env.CRON_SECRET || process.env.CYTHRO_CRON_SECRET;
-  const header = request.headers.get('x-cron-secret') || request.headers.get('authorization')?.replace('Bearer ', '');
+async function checkCronAuth(request: NextRequest) {
+  const { getConfig } = await import('@/database/config-manager.js')
+  const secret = await (getConfig as any)('security.cron_secret', process.env.CRON_SECRET || process.env.CYTHRO_CRON_SECRET)
+  const header = request.headers.get('x-cron-secret') || request.headers.get('authorization')?.replace('Bearer ', '')
   if (!secret) {
     return { ok: false, status: 500, message: 'CRON secret not configured' };
   }
@@ -15,7 +16,7 @@ function checkCronAuth(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = checkCronAuth(request);
+    const auth = await checkCronAuth(request);
     if (!auth.ok) {
       return NextResponse.json({ success: false, message: auth.message }, { status: auth.status });
     }
@@ -25,6 +26,8 @@ export async function GET(request: NextRequest) {
     // Backfill any missing expiry_date to avoid special cases
     const backfilled = await ServerLifecycleController.backfillExpiry(1000);
 
+    // Process billing first, then suspend expired and delete after grace
+    const billing = await ServerLifecycleController.processBillingCycles(now);
     const suspend = await ServerLifecycleController.suspendExpired(now);
     const del = await ServerLifecycleController.deleteAfterGrace(now);
 
@@ -32,6 +35,7 @@ export async function GET(request: NextRequest) {
       success: true,
       timestamp: now.toISOString(),
       backfilled,
+      billing,
       suspend,
       delete: del
     });
