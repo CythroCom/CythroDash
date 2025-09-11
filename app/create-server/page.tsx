@@ -13,6 +13,8 @@ import { useServerManagementStore } from '@/stores/server-management-store'
 import type { ServerType, ServerSoftware, ServerLocation, ServerPlan } from '@/stores/server-management-store'
 import { Sidebar, Header } from '@/components/LazyComponents'
 import { useAuthStore } from '@/stores/user-store'
+import { ServerCreationProtectedRoute } from '@/components/FeatureProtectedRoute'
+import { Skeleton } from '@/components/ui/skeleton'
 
 import { useCreditsStore } from '@/stores/credits-store'
 
@@ -165,34 +167,37 @@ export default function CreateServerPage() {
   const availableCredits = (knownCredits ?? userPermissions?.current_balance ?? currentUser?.coins ?? 0)
   const hasSufficientCredits = availableCredits >= totalDueNow
 
-  // If not authenticated, show the standard layout with a prompt
+  // If not authenticated, show the standard layout with a prompt (still gated by feature flag)
   if (!isAuthenticated || !currentUser) {
     return (
-      <div className="min-h-screen bg-neutral-900">
-        <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
-        <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>
-          <Header
-            title="Create Server"
-            subtitle="Follow the steps below to create your server"
-            searchQuery={searchQuery}
-            onSearchChange={handleSearchChange}
-            onMenuClick={handleMenuClick}
-          />
-          <main className="p-6">
-            <div className="flex items-center justify-center min-h-[400px]">
-              <div className="max-w-md text-center">
-                <h2 className="text-2xl font-bold text-white mb-2">Authentication required</h2>
-                <p className="text-neutral-400">Please log in to create a server.</p>
+      <ServerCreationProtectedRoute>
+        <div className="min-h-screen bg-neutral-900">
+          <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
+          <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>
+            <Header
+              title="Create Server"
+              subtitle="Follow the steps below to create your server"
+              searchQuery={searchQuery}
+              onSearchChange={handleSearchChange}
+              onMenuClick={handleMenuClick}
+            />
+            <main className="p-6">
+              <div className="flex items-center justify-center min-h-[400px]">
+                <div className="max-w-md text-center">
+                  <h2 className="text-2xl font-bold text-white mb-2">Authentication required</h2>
+                  <p className="text-neutral-400">Please log in to create a server.</p>
+                </div>
               </div>
-            </div>
-          </main>
+            </main>
+          </div>
         </div>
-      </div>
+      </ServerCreationProtectedRoute>
     )
   }
 
   return (
-    <div className="min-h-screen bg-neutral-900">
+    <ServerCreationProtectedRoute>
+      <div className="min-h-screen bg-neutral-900">
       <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
       <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>
         <Header
@@ -252,14 +257,18 @@ export default function CreateServerPage() {
                   <h2 className="text-2xl font-bold text-white mb-4">Select Server Type</h2>
                   <p className="text-neutral-400 mb-6">Choose the type of server you want to create</p>
 
-                  {isLoading ? (
-                    <div className="text-center py-8">
-                      <p className="text-neutral-400">Loading server types...</p>
-                    </div>
-                  ) : serverTypes.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-neutral-400">No server types available</p>
-                    </div>
+                  {serverTypes.length === 0 ? (
+                    isLoading ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <Skeleton key={i} className="h-36 w-full bg-neutral-800" />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-neutral-400">No server types available</p>
+                      </div>
+                    )
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {serverTypes.map((type) => (
@@ -298,14 +307,18 @@ export default function CreateServerPage() {
                   <h2 className="text-2xl font-bold text-white mb-4">Select Server Software</h2>
                   <p className="text-neutral-400 mb-6">Choose the software for your {wizardState.selectedServerType?.name} server</p>
 
-                  {isLoading ? (
-                    <div className="text-center py-8">
-                      <p className="text-neutral-400">Loading server software...</p>
-                    </div>
-                  ) : serverSoftware.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-neutral-400">No software available for this server type</p>
-                    </div>
+                  {serverSoftware.length === 0 ? (
+                    isLoading ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                          <Skeleton key={i} className="h-28 w-full bg-neutral-800" />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-neutral-400">No software available for this server type</p>
+                      </div>
+                    )
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {serverSoftware.map((software) => (
@@ -346,14 +359,18 @@ export default function CreateServerPage() {
                   <h2 className="text-2xl font-bold text-white mb-4">Select Location</h2>
                   <p className="text-neutral-400 mb-6">Choose where your server will be hosted</p>
 
-                  {isLoading ? (
-                    <div className="text-center py-8">
-                      <p className="text-neutral-400">Loading locations...</p>
-                    </div>
-                  ) : locations.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-neutral-400">No locations available</p>
-                    </div>
+                  {locations.length === 0 ? (
+                    isLoading ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <Skeleton key={i} className="h-28 w-full bg-neutral-800" />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-neutral-400">No locations available</p>
+                      </div>
+                    )
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {locations.map((location) => (
@@ -400,14 +417,18 @@ export default function CreateServerPage() {
                   <h2 className="text-2xl font-bold text-white mb-4">Select Plan</h2>
                   <p className="text-neutral-400 mb-6">Choose a hosting plan that fits your needs</p>
 
-                  {isLoading ? (
-                    <div className="text-center py-8">
-                      <p className="text-neutral-400">Loading plans...</p>
-                    </div>
-                  ) : plans.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-neutral-400">No plans available for the selected location</p>
-                    </div>
+                  {plans.length === 0 ? (
+                    isLoading ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <Skeleton key={i} className="h-40 w-full bg-neutral-800" />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-neutral-400">No plans available for the selected location</p>
+                      </div>
+                    )
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {plans.map((plan) => (
@@ -573,6 +594,8 @@ export default function CreateServerPage() {
           </div>
         </main>
       </div>
-    </div>
+      </div>
+
+    </ServerCreationProtectedRoute>
   )
 }

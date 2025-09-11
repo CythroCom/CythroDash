@@ -9,6 +9,7 @@
 import { referralOperations, CreateReferralClickData, CreateReferralSignupData } from '../../database/referrals';
 import { userOperations } from '../../database/user';
 import { ReferralLogsController } from './ReferralLogs';
+import { settingsOperations } from '../../database/settings';
 import {
   ReferralHelpers,
   SecurityInfo,
@@ -16,6 +17,18 @@ import {
   ReferralStatus,
   CythroDashReferralStats
 } from '../../../../database/tables/cythro_dash_referrals';
+
+// Server-side feature flag check aligned with /api/config (DB-first, env fallback)
+async function isReferralEnabled(): Promise<boolean> {
+  try {
+    const val = await settingsOperations.getValue<boolean>('NEXT_PUBLIC_REFERRAL_PROGRAM')
+    if (typeof val === 'boolean') return val
+  } catch {}
+  // Fallback to env if DB unavailable or value undefined
+  // @ts-ignore
+  const envVal = process?.env?.NEXT_PUBLIC_REFERRAL_PROGRAM
+  return String(envVal ?? 'false') === 'true'
+}
 
 // Request interfaces
 export interface ReferralClickRequest {
@@ -83,7 +96,7 @@ export class ReferralsController {
   static async processReferralClick(request: ReferralClickRequest): Promise<ReferralClickResponse> {
     try {
       // Check if referral program is enabled
-      if (!ReferralHelpers.isReferralProgramEnabled()) {
+      if (!(await isReferralEnabled())) {
         return {
           success: false,
           message: 'Referral program is currently disabled'
@@ -141,7 +154,7 @@ export class ReferralsController {
 
       return {
         success: true,
-        message: click.status === ReferralStatus.BLOCKED 
+        message: click.status === ReferralStatus.BLOCKED
           ? 'Click registered but blocked due to security concerns'
           : 'Referral click registered successfully',
         data: {
@@ -169,7 +182,7 @@ export class ReferralsController {
   static async processReferralSignup(request: ReferralSignupRequest): Promise<ReferralResponse> {
     try {
       // Check if referral program is enabled
-      if (!ReferralHelpers.isReferralProgramEnabled()) {
+      if (!(await isReferralEnabled())) {
         return {
           success: false,
           message: 'Referral program is currently disabled'
@@ -254,7 +267,7 @@ export class ReferralsController {
 
       return {
         success: true,
-        message: signup.status === ReferralStatus.BLOCKED 
+        message: signup.status === ReferralStatus.BLOCKED
           ? 'Signup registered but requires verification'
           : 'Referral signup processed successfully',
         data: {
@@ -268,7 +281,7 @@ export class ReferralsController {
 
     } catch (error) {
       console.error('Referral signup processing error:', error);
-      
+
       // Handle duplicate signup error
       if (error instanceof Error && error.message.includes('already has a referral signup')) {
         return {
@@ -353,7 +366,7 @@ export class ReferralsController {
   static async getUserReferralStats(userId: number): Promise<ReferralStatsResponse> {
     try {
       // Check if referral program is enabled
-      if (!ReferralHelpers.isReferralProgramEnabled()) {
+      if (!(await isReferralEnabled())) {
         return {
           success: false,
           message: 'Referral program is currently disabled'
@@ -362,12 +375,12 @@ export class ReferralsController {
 
       // Get user stats
       const stats = await referralOperations.getUserStats(userId);
-      
+
       if (!stats) {
         // Create initial stats if they don't exist
         await referralOperations.updateUserStats(userId);
         const newStats = await referralOperations.getUserStats(userId);
-        
+
         return {
           success: true,
           message: 'User referral statistics retrieved',
@@ -397,7 +410,7 @@ export class ReferralsController {
   static async claimReferralRewards(request: ClaimRewardsRequest): Promise<ClaimRewardsResponse> {
     try {
       // Check if referral program is enabled
-      if (!ReferralHelpers.isReferralProgramEnabled()) {
+      if (!(await isReferralEnabled())) {
         return {
           success: false,
           message: 'Referral program is currently disabled'

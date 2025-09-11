@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertCircle, Star, Trophy, Crown, Gem } from 'lucide-react'
 import LoadingOverlay from '@/components/LoadingOverlay'
 import { useAppBootstrap } from '@/hooks/use-bootstrap'
+import { ReferralProtectedRoute } from '@/components/FeatureProtectedRoute'
 
 // Import referral components (will create these to match backup)
 import ReferralHero from '@/components/Referral/ReferralHero'
@@ -138,44 +139,48 @@ export default function ReferralPage() {
   // Check if user is authenticated
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-neutral-900">
-        <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
-        <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>
-          <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} onMenuClick={handleMenuClick} />
-          <main className="p-6">
-            <div className="flex items-center justify-center min-h-[400px]">
-              <Alert className="max-w-md">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Please log in to access the referral program.
-                </AlertDescription>
-              </Alert>
-            </div>
-          </main>
+      <ReferralProtectedRoute>
+        <div className="min-h-screen bg-neutral-900">
+          <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
+          <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>
+            <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} onMenuClick={handleMenuClick} />
+            <main className="p-6">
+              <div className="flex items-center justify-center min-h-[400px]">
+                <Alert className="max-w-md">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Please log in to access the referral program.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            </main>
+          </div>
         </div>
-      </div>
+      </ReferralProtectedRoute>
     )
   }
 
   // Show error state
   if (error) {
     return (
-      <div className="min-h-screen bg-neutral-900">
-        <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
-        <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>
-          <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} onMenuClick={handleMenuClick} />
-          <main className="p-6">
-            <div className="flex items-center justify-center min-h-[400px]">
-              <Alert variant="destructive" className="max-w-md">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  {error}
-                </AlertDescription>
-              </Alert>
-            </div>
-          </main>
+      <ReferralProtectedRoute>
+        <div className="min-h-screen bg-neutral-900">
+          <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
+          <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>
+            <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} onMenuClick={handleMenuClick} />
+            <main className="p-6">
+              <div className="flex items-center justify-center min-h-[400px]">
+                <Alert variant="destructive" className="max-w-md">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    {error}
+                  </AlertDescription>
+                </Alert>
+              </div>
+            </main>
+          </div>
         </div>
-      </div>
+      </ReferralProtectedRoute>
     )
   }
 
@@ -194,71 +199,73 @@ export default function ReferralPage() {
   const nextTier = referralTiers.find((tier) => tier.minReferrals > totalReferrals)
 
   return (
-    <div className="min-h-screen bg-neutral-900">
-      {bootLoading && <LoadingOverlay message="Preparing your dashboard..." />}
-      <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
+    <ReferralProtectedRoute>
+      <div className="min-h-screen bg-neutral-900">
+        {bootLoading && <LoadingOverlay message="Preparing your dashboard..." />}
+        <Sidebar isOpen={sidebarOpen} onToggle={handleSidebarToggle} />
 
-      <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>
-        <Header
-          searchQuery={searchQuery}
-          onSearchChange={handleSearchChange}
-          onMenuClick={handleMenuClick}
-        />
+        <div className={`transition-all duration-200 ${sidebarOpen ? 'lg:ml-72' : 'lg:ml-16'}`}>
+          <Header
+            searchQuery={searchQuery}
+            onSearchChange={handleSearchChange}
+            onMenuClick={handleMenuClick}
+          />
 
-        <main className="p-6">
-          <div className="max-w-7xl mx-auto space-y-8">
-            {/* Hero Section */}
-            <ReferralHero
-              totalReferrals={totalReferrals}
-              totalEarned={totalEarned}
-              thisMonthEarned={thisMonthEarned}
-              currentTier={currentTier}
-            />
+          <main className="p-6">
+            <div className="max-w-7xl mx-auto space-y-8">
+              {/* Hero Section */}
+              <ReferralHero
+                totalReferrals={totalReferrals}
+                totalEarned={totalEarned}
+                thisMonthEarned={thisMonthEarned}
+                currentTier={currentTier}
+              />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Main Content */}
-              <div className="lg:col-span-2 space-y-6">
-                {/* Referral Code */}
-                <ReferralCodeCard
-                  referralCode={currentUser?.referral_code || 'GENERATING...'}
-                />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Main Content */}
+                <div className="lg:col-span-2 space-y-6">
+                  {/* Referral Code */}
+                  <ReferralCodeCard
+                    referralCode={currentUser?.referral_code || 'GENERATING...'}
+                  />
 
-                {/* How It Works */}
-                <HowItWorksCard />
+                  {/* How It Works */}
+                  <HowItWorksCard />
 
-                {/* Recent Referrals */}
-                <RecentReferralsCard
-                  referrals={referrals}
-                  isLoading={false}
-                />
-              </div>
+                  {/* Recent Referrals */}
+                  <RecentReferralsCard
+                    referrals={referrals}
+                    isLoading={false}
+                  />
+                </div>
 
-              {/* Sidebar */}
-              <div className="space-y-6">
-                {/* Current Tier */}
-                <CurrentTierCard
-                  currentTier={currentTier}
-                  nextTier={nextTier}
-                  totalReferrals={totalReferrals}
-                  pendingEarnings={pendingEarnings}
-                  onClaimRewards={handleClaimRewards}
-                  isClaimingRewards={isClaimingRewards}
-                />
+                {/* Sidebar */}
+                <div className="space-y-6">
+                  {/* Current Tier */}
+                  <CurrentTierCard
+                    currentTier={currentTier}
+                    nextTier={nextTier}
+                    totalReferrals={totalReferrals}
+                    pendingEarnings={pendingEarnings}
+                    onClaimRewards={handleClaimRewards}
+                    isClaimingRewards={isClaimingRewards}
+                  />
 
-                {/* All Tiers */}
-                <AllTiersCard
-                  tiers={referralTiers}
-                  currentTierName={currentTier.name}
-                  totalReferrals={totalReferrals}
-                />
+                  {/* All Tiers */}
+                  <AllTiersCard
+                    tiers={referralTiers}
+                    currentTierName={currentTier.name}
+                    totalReferrals={totalReferrals}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        </main>
-      </div>
+          </main>
+        </div>
 
-      <PerformanceMonitor />
-    </div>
+        <PerformanceMonitor />
+      </div>
+    </ReferralProtectedRoute>
   )
 }
 

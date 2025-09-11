@@ -55,6 +55,11 @@ const AdminSidebar = memo(({ isOpen, onToggle }: AdminSidebarProps) => {
       icon: 'CreditCard'
     },
     {
+      title: 'Redeem Codes',
+      href: '/admin/codes',
+      icon: 'Gift'
+    },
+    {
       title: 'Settings',
       href: '/admin/settings',
       icon: 'Settings'
