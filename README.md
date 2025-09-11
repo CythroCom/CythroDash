@@ -21,18 +21,7 @@ Advanced, modern dashboard for game server management built around Pterodactyl â
 - MongoDB 6+
 
 ## Quick Install
-The fastest way to get running is with the installer (clones repo, installs deps, runs setup-all, builds, and starts):
-
-```bash
-npx cythrodash install my-cythrodash
-```
-
-This will:
-1) Clone https://github.com/CythroCom/CythroDash.git into my-cythrodash folder
-2) Run `npm install`
-3) Run the comprehensive setup (generate secrets, configure DB, create admin)
-4) Build and start the application
-
+not ready yet.
 ## Manual Setup
 ```bash
 # Clone and install
