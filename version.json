@@ -1,21 +1,13 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "releaseDate": "2025-09-11",
-  "notes": "Initial version management scaffolding; adds status and upgrade commands, installer, and setup-all workflow.",
+  "notes": "Fixed some issues & transfer system added",
   "minNode": ">=18.0.0",
   "breakingChanges": false,
   "channels": {
     "stable": {
       "branch": "main",
       "description": "Stable releases"
-    },
-    "beta": {
-      "branch": "beta",
-      "description": "Pre-release beta builds"
-    },
-    "dev": {
-      "branch": "dev",
-      "description": "Development branch"
     }
   }
 }
