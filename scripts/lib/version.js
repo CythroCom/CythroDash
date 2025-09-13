@@ -2,10 +2,6 @@ const fs = require('fs')
 const path = require('path')
 const https = require('https')
 
-const OWNER = 'CythroCom'
-const REPO = 'CythroDash'
-
-function log(...a) { /* quiet helper */ }
 
 function readJsonSafe(fp) {
   try {
@@ -24,7 +20,7 @@ function getLocalVersionInfo(rootDir = process.cwd()) {
     notes: v.notes || '',
     minNode: v.minNode || '>=18.0.0',
     breakingChanges: !!v.breakingChanges,
-    channels: v.channels || { stable: { branch: 'main' }, dev: { branch: 'dev' } },
+    channels: v.channels || { stable: { branch: 'main' } },
     raw: v
   }
 }
@@ -50,7 +46,7 @@ function fetchUrl(url) {
 async function fetchRemoteVersionInfo(channel = 'stable') {
   const local = getLocalVersionInfo()
   const branch = (local.channels?.[channel]?.branch) || (channel === 'stable' ? 'main' : channel)
-  const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${branch}/version.json`
+  const rawUrl = `https://raw.githubusercontent.com/CythroCom/CythroDash/refs/heads/main/version.json`
   const text = await fetchUrl(rawUrl)
   const json = JSON.parse(text)
   return { ...json, channel, branch }

@@ -2,10 +2,9 @@
 /**
  * cythrodash upgrade
  */
-const fs = require('fs')
-const path = require('path')
+
 const { spawn } = require('child_process')
-const { MongoClient } = require('mongodb')
+
 const { getLocalVersionInfo, fetchRemoteVersionInfo, cmpVersions, colorize } = require('./lib/version')
 
 function run(cmd, args, options = {}) {
@@ -40,25 +39,7 @@ function parseArgs() {
   return out
 }
 
-function ensureDir(fp) { try { fs.mkdirSync(fp, { recursive: true }) } catch {} }
 
-async function dumpDbBackup(dir) {
-  try {
-    const uri = require('../database/config-manager.js').getConfigSync('database.uri')
-    if (!uri) return { ok: false, message: 'No DB URI' }
-    const client = new MongoClient(uri)
-    await client.connect()
-    const db = client.db()
-    const configDocs = await db.collection('cythro_dash_config').find({}).toArray()
-    const settingsDocs = await db.collection('cythro_dash_settings').find({}).toArray()
-    await client.close()
-    fs.writeFileSync(path.join(dir, 'cythro_dash_config.json'), JSON.stringify(configDocs, null, 2))
-    fs.writeFileSync(path.join(dir, 'cythro_dash_settings.json'), JSON.stringify(settingsDocs, null, 2))
-    return { ok: true }
-  } catch (e) {
-    return { ok: false, message: e?.message || 'DB backup failed' }
-  }
-}
 
 async function ensureGit() {
   await run('git', ['--version']).catch(() => { throw new Error('Git is required for upgrade.') })
@@ -84,12 +65,7 @@ async function upgradeWithGit(branch) {
   return oldCommit
 }
 
-async function rollbackGit(oldCommit) {
-  if (!oldCommit) return
-  try {
-    await run('git', ['reset', '--hard', oldCommit])
-  } catch {}
-}
+
 
 async function main() {
   const { force, dryRun, channel } = parseArgs()
@@ -118,78 +94,14 @@ async function main() {
     if (!ok) return
   }
 
-  // Pre-upgrade hook
-  const preHook = path.join(process.cwd(), 'scripts', 'hooks', 'pre-upgrade.js')
-  if (fs.existsSync(preHook)) {
-    console.log('Running pre-upgrade hook...')
-    await run('node', [preHook])
-  }
-
-  // Backups
-  const backupsDir = path.join(process.cwd(), 'backups', new Date().toISOString().replace(/[:.]/g, '-'))
-  ensureDir(backupsDir)
-  ensureDir(path.join(process.cwd(), 'config'))
-
-  // copy config dir
-  try {
-    const cfgSrc = path.join(process.cwd(), 'config')
-    const cfgDst = path.join(backupsDir, 'config')
-    fs.cpSync(cfgSrc, cfgDst, { recursive: true, force: true, errorOnExist: false })
-    console.log(`Backed up config/ to ${path.relative(process.cwd(), cfgDst)}`)
-  } catch (e) {
-    console.warn('Config backup failed:', e?.message || e)
-  }
-
-  const dbDump = await dumpDbBackup(backupsDir)
-  if (!dbDump.ok) console.warn('DB backup warning:', dbDump.message)
-
-  // Perform upgrade using git
+  // Perform upgrade only (no hooks, backups, migrations, or build)
   await ensureGit()
-  let oldCommit = null
   try {
-    oldCommit = await upgradeWithGit(remote.branch)
+    await upgradeWithGit(remote.branch)
   } catch (e) {
     console.error(colorize(`Upgrade failed during git operations: ${e?.message || e}`, 'red'))
     console.error('No changes were applied.')
     process.exit(1)
-  }
-
-  // Restore config to ensure upgrades never override local secrets
-  try {
-    const cfgBackup = path.join(backupsDir, 'config')
-    const cfgDest = path.join(process.cwd(), 'config')
-    if (fs.existsSync(cfgBackup)) {
-      fs.cpSync(cfgBackup, cfgDest, { recursive: true, force: true, errorOnExist: false })
-      console.log('Preserved local config/ (restored from backup)')
-    }
-  } catch (e) {
-    console.warn('Warning: could not restore config/:', e?.message || e)
-  }
-
-  // Migrations (placeholder)
-  const migrate = path.join(process.cwd(), 'scripts', 'migrate.js')
-  if (fs.existsSync(migrate)) {
-    console.log('Running migrations...')
-    await run('node', [migrate])
-  } else {
-    console.log('No migrations to run.')
-  }
-
-  // Build
-  try {
-    console.log('Building application...')
-    await run('npx', ['next', 'build'])
-  } catch (e) {
-    console.error(colorize('Build failed. Attempting rollback...', 'red'))
-    await rollbackGit(oldCommit)
-    process.exit(1)
-  }
-
-  // Post-upgrade hook
-  const postHook = path.join(process.cwd(), 'scripts', 'hooks', 'post-upgrade.js')
-  if (fs.existsSync(postHook)) {
-    console.log('Running post-upgrade hook...')
-    await run('node', [postHook])
   }
 
   console.log(colorize('Upgrade successful.', 'green'))

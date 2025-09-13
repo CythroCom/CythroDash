@@ -72,6 +72,11 @@ export type Server = {
   created_at?: string
   updated_at?: string
 
+  // Lifecycle management
+  expiry_date?: string
+  auto_delete_at?: string
+  overdue_amount?: number
+
   // Display information (legacy compatibility)
   players: string
   cpu: string
@@ -205,6 +210,21 @@ export const useServerStore = create<ServerStore>()(
 
           const result = await response.json()
 
+          // Debug logging for development
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Server Store - API Response:', {
+              success: result.success,
+              serverCount: result.servers?.length || 0,
+              servers: result.servers?.map((s: any) => ({
+                id: s.id,
+                name: s.name,
+                status: s.status,
+                billing_status: s.billing_status
+              })) || [],
+              userPermissions: result.user_permissions
+            });
+          }
+
           if (result.success) {
             const servers = (result.servers || []) as Server[]
             set({
@@ -214,6 +234,7 @@ export const useServerStore = create<ServerStore>()(
             })
             return true
           } else {
+            console.error('Server Store - API Error:', result.message);
             set({ error: result.message || 'Failed to fetch servers' })
             return false
           }

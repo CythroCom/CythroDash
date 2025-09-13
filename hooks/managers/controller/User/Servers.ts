@@ -453,16 +453,47 @@ export const ServersController = {
       const dbServers = await serverOperations.getServers(serverFilters);
       const totalCount = await serverOperations.getServerCountByUser(userId);
 
+      // Debug logging for development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('getUserServers - Database Results:', {
+          userId,
+          filters: serverFilters,
+          dbServerCount: dbServers.length,
+          dbServers: dbServers.map(s => ({
+            id: s.id,
+            name: s.name,
+            status: s.status,
+            billing_status: s.billing_status,
+            expiry_date: s.expiry_date,
+            overdue_amount: s.billing?.overdue_amount
+          }))
+        });
+      }
+
       // Transform database servers to frontend format
-      const servers = dbServers.map(dbServer => ({
-        id: dbServer.id,
-        pterodactyl_id: dbServer.pterodactyl_server_id,
-        pterodactyl_identifier: dbServer.pterodactyl_identifier,
-        name: dbServer.name,
-        description: dbServer.description,
-        status: String(dbServer.status || '').toLowerCase() as any, // operational status
-        power_state: String(dbServer.power_state || '').toLowerCase() as any,
-        billing_status: String(dbServer.billing_status || '').toLowerCase() as any,
+      const servers = dbServers.map(dbServer => {
+        // Map database status to frontend status
+        const mapDatabaseStatusToFrontend = (dbStatus: string): string => {
+          switch (dbStatus?.toLowerCase()) {
+            case 'active': return 'online'
+            case 'creating': return 'starting'
+            case 'suspended': return 'suspended'
+            case 'terminated': return 'offline'
+            case 'error': return 'offline'
+            case 'maintenance': return 'offline'
+            default: return 'unknown'
+          }
+        }
+
+        return {
+          id: dbServer.id,
+          pterodactyl_id: dbServer.pterodactyl_server_id,
+          pterodactyl_identifier: dbServer.pterodactyl_identifier,
+          name: dbServer.name,
+          description: dbServer.description,
+          status: mapDatabaseStatusToFrontend(dbServer.status || '') as any, // operational status
+          power_state: String(dbServer.power_state || '').toLowerCase() as any,
+          billing_status: String(dbServer.billing_status || '').toLowerCase() as any,
 
         // Resource information (placeholder for now)
         resources: {
@@ -483,17 +514,23 @@ export const ServersController = {
           }
         },
 
-        // Legacy compatibility properties
-        players: "0/0", // Placeholder
-        cpu: "0%", // Placeholder
-        memory: "0%", // Placeholder
-        uptime: "0m", // Placeholder
-        type: "Minecraft" as any, // Default type
+          // Legacy compatibility properties
+          players: "0/0", // Placeholder
+          cpu: "0%", // Placeholder
+          memory: "0%", // Placeholder
+          uptime: "0m", // Placeholder
+          type: "Minecraft" as any, // Default type
 
-        // Timestamps
-        created_at: dbServer.created_at?.toISOString(),
-        updated_at: dbServer.updated_at?.toISOString()
-      }));
+          // Lifecycle management fields
+          expiry_date: dbServer.expiry_date?.toISOString(),
+          auto_delete_at: dbServer.auto_delete_at?.toISOString(),
+          overdue_amount: dbServer.billing?.overdue_amount,
+
+          // Timestamps
+          created_at: dbServer.created_at?.toISOString(),
+          updated_at: dbServer.updated_at?.toISOString()
+        }
+      });
 
       return {
         success: true,

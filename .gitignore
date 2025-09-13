@@ -28,4 +28,4 @@ next-env.d.ts
 
 # local runtime/config (should never be committed)
 /config/
-
+/backups/

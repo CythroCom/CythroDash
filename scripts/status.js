@@ -41,7 +41,7 @@ async function getPublicSettings() {
 
 async function main() {
   const local = getLocalVersionInfo()
-  const channel = (process.env.CYTHRO_CHANNEL || 'stable')
+  const channel = 'stable'
   let remote
   try {
     remote = await fetchRemoteVersionInfo(channel)
@@ -51,8 +51,8 @@ async function main() {
 
   const dbStatus = await checkDb()
   const pub = await getPublicSettings()
-  const name = pub.NEXT_PUBLIC_NAME || 'CythroDash'
-  const desc = pub.NEXT_PUBLIC_DESCRIPTION || 'Advanced Game Server Management Dashboard'
+  const appName = pub.NEXT_PUBLIC_NAME || 'CythroDash'
+  const description = pub.NEXT_PUBLIC_DESCRIPTION || 'Advanced Game Server Management Dashboard'
   const publicUrl = pub.NEXT_PUBLIC_URL || ''
 
   const latest = remote?.version || 'unknown'
@@ -65,8 +65,8 @@ async function main() {
   let color = 'green'
   if (!dbStatus.ok) { health = 'errors'; color = 'red' }
 
-  console.log(colorize(`\n${name}`, 'cyan'))
-  console.log(desc)
+  console.log(colorize(`\n${appName}`, 'cyan'))
+  console.log(description)
   console.log('')
   console.log(`Local Version: ${local.version}`)
   console.log(`Latest Version (${channel}): ${latest}${isOutdated ? ' ' + colorize('(update available)', 'yellow') : ''}`)

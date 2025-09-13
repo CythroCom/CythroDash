@@ -9,10 +9,10 @@ interface ServerListProps {
   servers: Server[]
   searchQuery?: string
   onCreateServer?: () => void
-  onServerStart?: (serverId: string | number) => void
-  onServerRestart?: (serverId: string | number) => void
   onCopyIP?: (ip: string) => void
   onOpenExternal?: (serverId: string | number) => void
+  onServerRenew?: (serverId: string | number) => void
+  onManageServer?: (serverId: string | number) => void
   onClearSearch?: () => void
 }
 
@@ -69,14 +69,14 @@ const ListHeader = memo(({ onCreateServer }: { onCreateServer?: () => void }) =>
 ListHeader.displayName = "ListHeader"
 
 // Main ServerList component with optimizations
-const ServerList = memo(({ 
-  servers, 
+const ServerList = memo(({
+  servers,
   searchQuery = "",
   onCreateServer,
-  onServerStart,
-  onServerRestart,
   onCopyIP,
   onOpenExternal,
+  onServerRenew,
+  onManageServer,
   onClearSearch
 }: ServerListProps) => {
   // Memoize filtered servers to prevent unnecessary recalculations
@@ -91,14 +91,6 @@ const ServerList = memo(({
   }, [servers, searchQuery])
 
   // Memoize event handlers to prevent unnecessary re-renders
-  const handleServerStart = useCallback((serverId: string | number) => {
-    onServerStart?.(serverId)
-  }, [onServerStart])
-
-  const handleServerRestart = useCallback((serverId: string | number) => {
-    onServerRestart?.(serverId)
-  }, [onServerRestart])
-
   const handleCopyIP = useCallback((ip: string) => {
     onCopyIP?.(ip)
   }, [onCopyIP])
@@ -114,6 +106,14 @@ const ServerList = memo(({
   const handleCreateServer = useCallback(() => {
     onCreateServer?.()
   }, [onCreateServer])
+
+  const handleServerRenew = useCallback((serverId: string | number) => {
+    onServerRenew?.(serverId)
+  }, [onServerRenew])
+
+  const handleManageServer = useCallback((serverId: string | number) => {
+    onManageServer?.(serverId)
+  }, [onManageServer])
 
   // Show empty state if no servers match search
   if (filteredServers.length === 0 && searchQuery) {
@@ -135,10 +135,10 @@ const ServerList = memo(({
           <ServerCard
             key={server.id}
             server={server}
-            onStart={handleServerStart}
-            onRestart={handleServerRestart}
             onCopyIP={handleCopyIP}
             onOpenExternal={handleOpenExternal}
+            onRenew={handleServerRenew}
+            onManageServer={handleManageServer}
           />
         ))}
       </div>

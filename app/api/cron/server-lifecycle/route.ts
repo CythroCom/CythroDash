@@ -3,8 +3,15 @@ import { ServerLifecycleController } from '@/hooks/managers/controller/User/serv
 
 async function checkCronAuth(request: NextRequest) {
   const { getConfig } = await import('@/database/config-manager.js')
-  const secret = await (getConfig as any)('security.cron_secret', process.env.CRON_SECRET || process.env.CYTHRO_CRON_SECRET)
+  const secret = await (getConfig as any)('security.cron_secret', process.env.CRON_SECRET || process.env.CYTHRO_CRON_SECRET || 'default-cron-secret-change-me')
   const header = request.headers.get('x-cron-secret') || request.headers.get('authorization')?.replace('Bearer ', '')
+
+  // For development, allow a default secret
+  if (process.env.NODE_ENV === 'development' && !header) {
+    console.warn('CRON job called without authentication in development mode - allowing for testing');
+    return { ok: true };
+  }
+
   if (!secret) {
     return { ok: false, status: 500, message: 'CRON secret not configured' };
   }

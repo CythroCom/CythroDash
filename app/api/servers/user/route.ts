@@ -10,6 +10,53 @@ import { NextRequest, NextResponse } from 'next/server';
 import ServersController from '@/hooks/managers/controller/User/Servers';
 import { z } from 'zod';
 
+// Background CRON job trigger function
+async function triggerServerLifecycleCron(): Promise<void> {
+  try {
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+
+    // Retrieve CRON secret the same way the endpoint does
+    let cronSecret: string | undefined = undefined;
+    try {
+      const { getConfig } = await import('@/database/config-manager.js');
+      cronSecret = await (getConfig as any)(
+        'security.cron_secret',
+        process.env.CRON_SECRET || process.env.CYTHRO_CRON_SECRET || 'default-cron-secret-change-me'
+      );
+    } catch (e) {
+      console.warn('triggerServerLifecycleCron: failed to load cron secret from config, falling back to env');
+      cronSecret = process.env.CRON_SECRET || process.env.CYTHRO_CRON_SECRET || 'default-cron-secret-change-me';
+    }
+
+    const response = await fetch(`${baseUrl}/api/cron/server-lifecycle`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'CythroDash-Internal/1.0',
+        'x-cron-secret': String(cronSecret || ''),
+        'authorization': `Bearer ${String(cronSecret || '')}`
+      },
+    });
+
+    if (!response.ok) {
+      let bodyText = '';
+      try { bodyText = await response.text(); } catch {}
+      console.warn(`CRON job returned ${response.status}: ${response.statusText}`, { body: bodyText?.slice(0, 300) });
+    } else {
+      const result = await response.json();
+      console.log('Background CRON job completed:', {
+        backfilled: result.backfilled,
+        billing: result.billing,
+        suspend: result.suspend,
+        delete: result.delete
+      });
+    }
+  } catch (error) {
+    // Don't throw - this is a background operation
+    console.error('Background CRON job error:', error);
+  }
+}
+
 // Input validation schema for GET request
 const getUserServersSchema = z.object({
   status: z.string().optional(),
@@ -162,6 +209,12 @@ export async function GET(request: NextRequest) {
     const filters = validation.data;
     const user = authResult.user;
 
+    // Trigger server lifecycle CRON job in background to ensure up-to-date data
+    // This runs asynchronously and doesn't affect response time
+    triggerServerLifecycleCron().catch(error => {
+      console.error('Background CRON job failed:', error);
+    });
+
     // Get user's servers using the controller
     const result = await ServersController.getUserServers(user.id, {
       status: filters.status as any,
@@ -177,12 +230,31 @@ export async function GET(request: NextRequest) {
     };
 
     if (!result.success) {
+      console.error('Failed to get user servers:', {
+        userId: user.id,
+        message: result.message,
+        filters
+      });
       return NextResponse.json({
         success: false,
         message: result.message
-      }, { 
+      }, {
         status: 400,
         headers: responseHeaders
+      });
+    }
+
+    // Debug logging for development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('User servers retrieved:', {
+        userId: user.id,
+        serverCount: result.servers?.length || 0,
+        servers: result.servers?.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          status: s.status,
+          billing_status: s.billing_status
+        }))
       });
     }
 
@@ -192,7 +264,7 @@ export async function GET(request: NextRequest) {
       servers: result.servers,
       total_count: result.total_count,
       user_limits: result.user_limits
-    }, { 
+    }, {
       status: 200,
       headers: responseHeaders
     });

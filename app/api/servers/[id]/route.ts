@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { panelServerGetDetails, panelServerUpdateDetails, panelServerDelete } from '@/hooks/managers/pterodactyl/servers';
+import { serverOperations } from '@/hooks/managers/database/servers';
 import { z } from 'zod';
 
 // Input validation schema for PATCH request
@@ -158,20 +159,40 @@ export async function GET(
       }, { status: 401 });
     }
 
-    const serverId = parseInt(params.id);
-    if (isNaN(serverId)) {
-      return NextResponse.json({
-        success: false,
-        message: 'Invalid server ID'
-      }, { status: 400 });
+    const rawId = params.id;
+
+    // Resolve incoming ID to Pterodactyl numeric server ID
+    let panelServerId: number | null = null;
+    try {
+      if (/^\d+$/.test(rawId)) {
+        panelServerId = parseInt(rawId, 10);
+      } else if (rawId.startsWith('srv_')) {
+        const dbServer = await serverOperations.getServerById(rawId);
+        if (!dbServer) {
+          console.warn('GET /api/servers/[id] - DB server not found for internal id', { rawId });
+          return NextResponse.json({ success: false, message: 'Server not found' }, { status: 404 });
+        }
+        if (typeof dbServer.pterodactyl_server_id === 'number') {
+          panelServerId = dbServer.pterodactyl_server_id;
+        } else {
+          console.warn('GET /api/servers/[id] - Missing panel mapping for server', { rawId });
+          return NextResponse.json({ success: false, message: 'Server is not yet linked to game panel' }, { status: 409 });
+        }
+      } else {
+        console.warn('GET /api/servers/[id] - Unsupported ID format', { rawId });
+        return NextResponse.json({ success: false, message: 'Invalid server ID format' }, { status: 400 });
+      }
+    } catch (resolveErr) {
+      console.error('GET /api/servers/[id] - Error resolving server id', { rawId, error: String(resolveErr) });
+      return NextResponse.json({ success: false, message: 'Failed to resolve server ID' }, { status: 500 });
     }
 
     const user = authResult.user;
 
     try {
       // Get server details from Pterodactyl
-      const serverResponse = await panelServerGetDetails(serverId, { 
-        include: "allocations,variables,egg,node" 
+      const serverResponse = await panelServerGetDetails(panelServerId!, {
+        include: "allocations,variables,egg,node"
       });
 
       if (!serverResponse.attributes) {
@@ -197,6 +218,14 @@ export async function GET(
       const diskUsage = server.limits?.disk ? 
         Math.round((server.resource_usage?.disk_bytes || 0) / (server.limits.disk * 1024 * 1024) * 100) : 0;
       const cpuUsage = Math.round(server.resource_usage?.cpu_absolute || 0);
+
+      // Get billing information from database
+      let billingInfo = null;
+      try {
+        billingInfo = await serverOperations.getServerByPterodactylId(server.id);
+      } catch (error) {
+        console.warn('Could not fetch billing information for server:', server.id, error);
+      }
 
       // Determine server status
       let status: 'online' | 'offline' | 'starting' | 'stopping' = 'offline';
@@ -262,7 +291,14 @@ export async function GET(
         // Legacy compatibility
         type: server.egg_name || 'Unknown',
         cpu: `${cpuUsage}%`,
-        memory: `${Math.round((server.resource_usage?.memory_bytes || 0) / (1024 * 1024))}MB/${server.limits?.memory || 0}MB`
+        memory: `${Math.round((server.resource_usage?.memory_bytes || 0) / (1024 * 1024))}MB/${server.limits?.memory || 0}MB`,
+
+        // Billing information from database
+        billing_status: billingInfo?.billing_status || 'active',
+        expiry_date: billingInfo?.expiry_date?.toISOString(),
+        auto_delete_at: billingInfo?.auto_delete_at?.toISOString(),
+        overdue_amount: billingInfo?.billing?.overdue_amount,
+        pterodactyl_identifier: server.identifier || server.uuid
       };
 
       // Set rate limit headers

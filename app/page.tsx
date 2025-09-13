@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useCallback, useEffect, useMemo } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Sidebar, Header, ServerList, ServerListSkeleton } from "@/components/LazyComponents"
+import { Sidebar, Header, ServerList } from "@/components/LazyComponents"
 import { usePerformanceMonitor, useMemoryMonitor } from "@/hooks/usePerformance"
 import { preloadCriticalComponents, preloadOnInteraction } from "@/components/LazyComponents"
 import PerformanceMonitor from "@/components/PerformanceMonitor"
@@ -18,7 +18,7 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const { checkSession } = useAuthStore()
-  const { servers, isLoading, error, fetchServers, powerAction, fetchLiveStatus, startLivePolling, stopLivePolling, startUptimeTicker, stopUptimeTicker } = useServerStore()
+  const { servers, isLoading, error, fetchServers } = useServerStore()
 
   // Performance monitoring in development
   usePerformanceMonitor("Dashboard")
@@ -63,28 +63,7 @@ export default function Dashboard() {
     setSidebarOpen(true)
   }, [])
 
-  const handleServerStart = useCallback(async (serverId: number) => {
-    const ok = await powerAction({ id: String(serverId) }, 'start')
-    if (ok) {
-      showSuccess('Start signal sent')
-      // Try to refresh live status shortly after
-      setTimeout(() => { void fetchLiveStatus({ id: String(serverId) }) }, 500)
-    } else {
-      const { showError } = await import('@/lib/toast')
-      showError('Failed to start server')
-    }
-  }, [powerAction, fetchLiveStatus])
 
-  const handleServerRestart = useCallback(async (serverId: number) => {
-    const ok = await powerAction({ id: String(serverId) }, 'restart')
-    if (ok) {
-      showSuccess('Restart signal sent')
-      setTimeout(() => { void fetchLiveStatus({ id: String(serverId) }) }, 800)
-    } else {
-      const { showError } = await import('@/lib/toast')
-      showError('Failed to restart server')
-    }
-  }, [powerAction, fetchLiveStatus])
 
   const handleCopyIP = useCallback((ip: string) => {
     navigator.clipboard.writeText(ip)
@@ -105,40 +84,62 @@ export default function Dashboard() {
     setSearchQuery("")
   }, [])
 
+  const handleServerRenew = useCallback(async (serverId: string | number) => {
+    try {
+      const { showSuccess, showError } = await import('@/lib/toast')
+      const user = useAuthStore.getState().currentUser
+
+      if (!user) {
+        showError('Authentication required')
+        return
+      }
+
+      const response = await fetch(`/api/servers/${serverId}/renew`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-data': encodeURIComponent(JSON.stringify(user))
+        },
+        credentials: 'include',
+        body: JSON.stringify({ confirm: true })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        showSuccess('Server renewed successfully')
+        // Refresh server data
+        await fetchServers()
+      } else {
+        showError(result.message || 'Failed to renew server')
+      }
+    } catch (error) {
+      console.error('Error renewing server:', error)
+      const { showError } = await import('@/lib/toast')
+      showError('Failed to renew server')
+    }
+  }, [fetchServers])
+
+  const handleManageServer = useCallback((serverId: string | number) => {
+    router.push(`/servers/${serverId}`)
+  }, [router])
+
   // Map store servers to UI shape
   const mapStoreServersToUi = useCallback((s: import("@/stores/server-store").Server[]): UiServer[] => {
     return s.map((sv) => ({
       id: sv.id,
       name: sv.name,
-      status: (sv.status === 'online' ? 'started' : sv.status) as UiServer['status'],
+      status: sv.status as UiServer['status'],
       game: sv.type || 'Game',
       ip: (() => {
         const allocs = sv.allocations || []
         const primary = allocs.find(a => a.assigned) || allocs[0]
         return primary ? `${primary.ip}:${primary.port}` : ''
       })(),
-      players: (() => {
-        // Try to parse players from sv.players like "3/10"
-        const parts = (sv.players || '0/0').split('/')
-        const current = parseInt(parts[0] || '0', 10) || 0
-        const max = parseInt(parts[1] || '0', 10) || 0
-        return { current, max }
-      })(),
-      cpu: (() => {
-        // sv.cpu like "23%"
-        const n = parseInt((sv.cpu || '0').toString().replace(/[^0-9]/g, ''), 10)
-        return isNaN(n) ? 0 : n
-      })(),
-      memory: (() => {
-        // sv.memory like "512MB/2048MB" -> extract numbers
-        const m = (sv.memory || '0MB/0MB').toString()
-        const match = m.match(/(\d+)\s*MB\/(\d+)\s*MB/i)
-        if (match) {
-          return { used: parseInt(match[1], 10), total: parseInt(match[2], 10) }
-        }
-        return { used: 0, total: 0 }
-      })(),
-      uptime: sv.uptime || '0s',
+      billing_status: sv.billing_status,
+      expiry_date: sv.expiry_date,
+      auto_delete_at: sv.auto_delete_at,
+      overdue_amount: sv.overdue_amount,
     }))
   }, [])
 
@@ -180,10 +181,10 @@ export default function Dashboard() {
             servers={mapStoreServersToUi(servers)}
             searchQuery={searchQuery}
             onCreateServer={handleCreateServer}
-            onServerStart={handleServerStart}
-            onServerRestart={handleServerRestart}
             onCopyIP={handleCopyIP}
             onOpenExternal={handleOpenExternal}
+            onServerRenew={handleServerRenew}
+            onManageServer={handleManageServer}
             onClearSearch={handleClearSearch}
           />
         )}
